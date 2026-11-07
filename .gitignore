@@ -1,0 +1,32 @@
+# Secrets and local settings
+.env
+.env.*
+!.env.example
+
+# JavaScript
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local databases and generated data
+*.db
+*.sqlite
+*.sqlite3
+data/generated/*
+!data/generated/.gitkeep
+
+# Logs and operating system files
+*.log
+.DS_Store
+Thumbs.db
