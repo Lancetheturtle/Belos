@@ -31,3 +31,7 @@ The transport contract replaces the earlier 911-style endpoints. See `../contrac
 ## Map workspace
 
 The home screen is a dark map with a right sidebar. Expand Selected ambulance, Transport schedule, Fleet status, or Shift updates for details. Click a unit on the map or select it in the sidebar. The schedule retains the replacement assignment dropdowns. On mobile the map stays first and the sidebar sections stack underneath. OpenStreetMap tiles are styled dark using a CSS filter applied only to the tile pane; markers, labels, controls, and attribution keep their own styling.
+
+## Current continuous road demo
+
+The latest demo starts moving automatically at 15x speed. Pause live / Resume live controls the clock. The Advance 5 min workflow is retired. Highlighted routes are OSRM driving paths; vehicles traverse the same geometry, wait for scheduled pickups, load for two simulated minutes, and wait two minutes to unload. Initial routes are cached in src/mocks/roadRoutes.json; new replacement routes require internet. See the road simulation section in contracts/frontend-api.md for optional route fields. Earlier direct-line descriptions above describe the retired prototype.

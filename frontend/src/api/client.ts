@@ -1,3 +1,4 @@
+import { prepareRoads } from './roadRouting';
 import type { Action, Snapshot } from '../types';
 import { applyAction, createScenario } from '../mocks/simulation';
 export const isDemo=import.meta.env.VITE_DATA_MODE!=='api';
@@ -8,4 +9,4 @@ async function request(path:string,action?:Action):Promise<Snapshot>{
  const data=await response.json();if(!Array.isArray(data.trips)||!Array.isArray(data.vehicles)||!Array.isArray(data.events)||typeof data.minute!=='number')throw new Error('Backend must implement the transport Snapshot contract.');
  return data;
 }
-export const client={load:async():Promise<Snapshot>=>isDemo?createScenario():request('/transport/reset'),act:async(s:Snapshot,a:Action):Promise<Snapshot>=>isDemo?applyAction(s,a):request('/transport/action',a)};
+export const client={load:async():Promise<Snapshot>=>isDemo?prepareRoads(createScenario()):request('/transport/reset'),act:async(s:Snapshot,a:Action):Promise<Snapshot>=>isDemo?prepareRoads(applyAction(s,a)):request('/transport/action',a)};
