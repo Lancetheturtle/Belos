@@ -19,7 +19,7 @@ A hackathon emergency dispatch simulator for comparing nearest-available and fle
 
 ## Current status
 
-Folder structure only. Application scaffolding, dependencies, and run commands still need to be added by each owner.
+The frontend is runnable in demo mode. From frontend/, run npm install and npm run dev. See frontend/README.md for the walkthrough and contracts/frontend-api.md for backend integration. Backend and analytics modules remain placeholders.
 
 ## Working together
 
