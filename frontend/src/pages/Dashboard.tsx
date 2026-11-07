@@ -9,10 +9,11 @@ import {
   Activity,
 } from 'lucide-react';
 import { client, isDemo } from '../api/client';
-import { applyAction, free, late } from '../mocks/simulation';
+import { applyAction, free } from '../mocks/simulation';
 import { clockWithSeconds } from '../utils/time';
 import type { Action, Snapshot } from '../types';
 import CityMap from '../components/CityMap';
+import PatientTransports from '../components/PatientTransports';
 import VehicleDetails from '../components/VehicleDetails';
 import TransportSchedule from '../components/TransportSchedule';
 import ConnectionStatus from '../components/ConnectionStatus';
@@ -102,15 +103,6 @@ export default function Dashboard() {
     );
   const act = (a: Action) => void run(() => client.act(snapshotRef.current!, a));
   const available = s.vehicles.filter((v) => free(v, s));
-  const delayed = s.trips.filter(
-    (t) =>
-      t.status !== 'complete' &&
-      (late(s, t) > 0 ||
-        t.status === 'transfer' ||
-        s.vehicles.some(
-          (unit) => unit.id === t.vehicleId && unit.holdUntil > s.minute,
-        )),
-  );
   return (
     <div className="app">
       <header>
@@ -148,38 +140,22 @@ export default function Dashboard() {
             <h1>Your fleet. One clear view.</h1>
             <p>Medical transport coordination</p>
           </div>
-          <section className="map-stats" aria-label="Shift summary">
-            <div>
-              <span className="dot" />
-              <strong>{available.length}</strong>
-              <span>available</span>
-            </div>
-            <div>
-              <span className="dot orange" />
-              <strong>{delayed.length}</strong>
-              <span>need attention</span>
-            </div>
-            <div>
-              <span className="dot gray" />
-              <strong>{s.vehicles.filter((v) => v.outOfService).length}</strong>
-              <span>out of service</span>
-            </div>
-          </section>
           <div className="map-bottom">
             <div className="map-legend">
               <span>
                 <i className="dot" />
-                Active unit
+                Active
               </span>
               <span>
-                <i className="dot orange" />
-                Delayed
+                <i className="dot available" />
+                Available
               </span>
               <span>
                 <i className="dot gray" />
                 Out of service
               </span>
             </div>
+            <div className="route-key"><span><i style={{background: "#ffda45", width: 7, height: 7, borderRadius: "50%"}} />Pickup call</span><span><i style={{background: "#55dec1"}} />To pickup</span><span><i style={{background: "#63a5ff"}} />To drop-off</span></div>
             <span className="map-note">
               Synthetic data · {live ? 'Live simulation' : 'Paused'} at {LIVE_SPEED}× speed · Highlighted driving routes
             </span>
@@ -199,17 +175,7 @@ export default function Dashboard() {
             </div>
           )}
           <div className="shift-controls">
-            <label className="traffic">
-              <input
-                type="checkbox"
-                checked={s.traffic}
-                disabled={busy}
-                onChange={(e) =>
-                  act({ type: 'traffic', enabled: e.target.checked })
-                }
-              />{' '}
-              Road slowdown
-            </label>
+
             <button
               className="primary"
               disabled={busy}
@@ -221,6 +187,7 @@ export default function Dashboard() {
             </button>
           </div>
           <div className="sidebar-sections">
+            <PatientTransports />
             <VehicleDetails snapshot={s} selected={selected} onSelect={setSelected} busy={busy} onAction={act} />
             <TransportSchedule snapshot={s} available={available} busy={busy} onAction={act} />
             <details className="drawer fleet">
@@ -238,17 +205,11 @@ export default function Dashboard() {
                   onClick={() => setSelected(unit.id)}
                 >
                   <span
-                    className={`dot ${unit.outOfService ? 'gray' : unit.holdUntil > s.minute ? 'orange' : ''}`}
+                    className={`dot ${unit.outOfService ? 'gray' : unit.tripId || unit.holdUntil > s.minute ? '' : 'available'}`}
                   />
                   <strong>{unit.id}</strong>
                   <span>
-                    {unit.outOfService
-                      ? 'Out of service'
-                      : unit.holdUntil > s.minute
-                        ? 'Delayed'
-                        : unit.tripId
-                          ? 'On a trip'
-                          : 'Available'}
+                    {unit.outOfService ? 'Out of service' : unit.tripId || unit.holdUntil > s.minute ? 'Active' : 'Available'}
                   </span>
                 </button>
               ))}

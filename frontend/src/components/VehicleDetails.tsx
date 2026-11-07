@@ -35,7 +35,7 @@ export default function VehicleDetails({ snapshot: s, selected, onSelect: setSel
                 </select>
                 <div className="unit-state">
                   <span
-                    className={`dot ${v.outOfService ? 'gray' : held ? 'orange' : ''}`}
+                    className={`dot ${v.outOfService ? 'gray' : v.tripId || held ? '' : 'available'}`}
                   />
                   {v.outOfService
                     ? 'Out of service'

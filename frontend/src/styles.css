@@ -890,3 +890,20 @@ select {
         transition:none!important
     }
 }
+
+/* Imported transport directory */
+.dataset-intro{padding:0 22px 10px;color:#91a9b9;font-size:10px;line-height:1.7}.dataset-intro strong{color:#bed5df;font-weight:550}.dataset-intro p{margin:5px 0}.dataset-counts{display:flex;gap:12px;padding:5px 22px 15px;color:#8faaba;font-size:9px;flex-wrap:wrap}.dataset-counts strong{color:#64d4b9;margin-right:3px;font-size:13px}.dataset-filters{padding:0 22px 15px;display:flex;flex-direction:column;gap:8px}.dataset-filters label{font-size:9px;color:#8ba6b8}.dataset-filters input,.dataset-filters select{width:100%;min-width:0;background:#192935;border:1px solid #334956;color:#d1e1e9;border-radius:5px;font-size:10px;padding:9px}.dataset-result{font-size:9px;color:#7294a8}.dataset-list{max-height:460px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#3c5160 #111b26}.dataset-record{border-top:1px solid #253947}.dataset-record>summary{display:flex;justify-content:space-between;align-items:center;list-style:none;padding:13px 22px;gap:8px;cursor:pointer}.dataset-record>summary::-webkit-details-marker{display:none}.dataset-record>summary::after{content:'+';color:#7e9eae;font-size:15px}.dataset-record[open]>summary::after{content:'−'}.dataset-record>summary>span{display:flex;flex-wrap:wrap;align-items:center;gap:7px;min-width:0}.dataset-record strong{font-size:11px;font-weight:550;color:#c9e0ea}.dataset-record summary small{width:100%;font-size:9px;color:#86a2b3;order:3;line-height:1.6}.dataset-record .pill{font-size:8px;white-space:normal}.dataset-record dl{padding:0 22px 16px;margin:0;font-size:10px}.dataset-record dt{color:#6f92a8;font-size:9px;margin-top:12px}.dataset-record dd{margin:4px 0 0;color:#b7d0dc;line-height:1.6;overflow-wrap:anywhere}.dataset-record dd small{display:block;color:#829fae;font-size:9px}.dataset-record[open]{background:#142430}.dataset-caption,.dataset-empty{font-size:10px;line-height:1.6;color:#88a5b8;padding:0 22px 13px}.dataset-record summary:hover{background:#1a2d39}
+
+.route-key{display:flex;gap:16px;background:#101c27ef;border:1px solid #293c4a;border-radius:5px;padding:8px 12px;align-self:flex-start}.route-key span{display:flex;align-items:center;gap:7px;color:#adbeca;font-size:9px}.route-key i{display:block;width:16px;height:3px;border-radius:2px}
+
+.dot.available{background:#8bb7f0}
+
+/* Pickup call: a flashing core and an expanding hollow ring. */
+.call-beacon{background:none;border:0;overflow:visible}
+.call-dot{position:absolute;left:5px;top:5px;width:10px;height:10px;border-radius:50%;background:#ffda45;box-shadow:0 0 10px #ffda4580;animation:call-flash 1.6s ease-in-out infinite}
+.call-ring{position:absolute;inset:0;border:2px solid #ffda45;border-radius:50%;animation:call-expand 2.4s linear infinite;pointer-events:none}
+@keyframes call-expand{0%{transform:scale(.5);opacity:1}60%{opacity:.8}100%{transform:scale(4);opacity:0}}
+@keyframes call-flash{0%,100%{opacity:1}50%{opacity:.35}}
+/* Explicitly requested call pulses stay visible; reduced-motion vehicle movement remains instant. */
+@media(prefers-reduced-motion:reduce){.call-dot{animation:none}}
+.call-ring-second{animation-delay:-1.2s}
