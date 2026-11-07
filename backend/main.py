@@ -28,6 +28,10 @@ fake_incidents = [
     Incident(id="INC-2", location=Position(lat=42.7250, lng=-73.6900), priority=2, created_at=time.time(), required_capabilities=["BLS"]),
 ]
 
+@app.get("/")
+def read_root():
+    return {"status": "online", "system": "Belos Emergency Dispatch API", "docs": "/docs"}
+
 @app.get("/scenario")
 def get_scenario():
     return {
