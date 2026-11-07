@@ -16,6 +16,7 @@ type Movement = {
   route?: L.Polyline;
   destination?: Position;
   path: Position[];
+  remaining: Position[];
 };
 
 export default function CityMap({
@@ -32,10 +33,13 @@ export default function CityMap({
   const layer = useRef<L.LayerGroup | null>(null);
   const markers = useRef(new Map<string, L.CircleMarker>());
   const routes = useRef(new Map<string, L.Polyline>());
+  const calls = useRef(new Map<string, L.Marker>());
   const destinationMarker = useRef<L.CircleMarker | null>(null);
   const frame = useRef<number | null>(null);
   const previousMinute = useRef<number | null>(null);
   const onSelectRef = useRef(onSelect);
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
   const [failed, setFailed] = useState(false);
   onSelectRef.current = onSelect;
 
@@ -69,6 +73,7 @@ export default function CityMap({
       layer.current = null;
       markers.current.clear();
       routes.current.clear();
+      calls.current.clear();
       destinationMarker.current = null;
       previousMinute.current = null;
     };
@@ -113,11 +118,7 @@ export default function CityMap({
         markers.current.set(vehicle.id, marker);
       }
 
-      const color = vehicle.outOfService
-        ? '#89929e'
-        : vehicle.holdUntil > snapshot.minute
-          ? '#efb24e'
-          : '#4ed9b8';
+      const color = vehicle.outOfService ? '#89929e' : vehicle.tripId || vehicle.holdUntil > snapshot.minute ? '#4ed9b8' : '#8bb7f0';
       marker.setStyle({ color, fillColor: color, fillOpacity: 1, weight: 3 });
       marker.setRadius(vehicle.id === selected ? 11 : 8);
 
@@ -133,10 +134,10 @@ export default function CityMap({
           routes.current.set(vehicle.id, route);
         }
         route.setStyle({
-          color: vehicle.id === selected ? '#55dec1' : '#618d88',
+          color: trip.status === 'onboard' ? '#63a5ff' : '#55dec1',
           weight: vehicle.id === selected ? 4 : 2,
         });
-        route.setLatLngs(vehicle.route ?? []);
+        route.setLatLngs([vehicle.position, ...(vehicle.route?.slice((vehicle.routeIndex ?? 0) + 1) ?? [])]);
       } else if (route) {
         route.remove();
         routes.current.delete(vehicle.id);
@@ -144,12 +145,35 @@ export default function CityMap({
       }
 
       marker.bringToFront();
-      movements.push({ from, to: vehicle.position, marker, route, destination, path: vehicle.movementPath ?? [from, vehicle.position] });
+      movements.push({ from, to: vehicle.position, marker, route, destination, remaining: vehicle.route?.slice((vehicle.routeIndex ?? 0) + 1) ?? [], path: vehicle.movementPath ?? [from, vehicle.position] });
     }
 
+    // Keep pickup beacons mounted so their pulse continues across live ticks.
+    const pendingCalls = snapshot.trips.filter(t => ['waiting', 'pickup', 'transfer'].includes(t.status));
+    const callIds = new Set(pendingCalls.map(t => t.id));
+    for (const [id, marker] of calls.current) {
+      if (!callIds.has(id)) { marker.remove(); calls.current.delete(id); }
+    }
+    for (const trip of pendingCalls) {
+      const location = trip.transferLocation ?? trip.pickup;
+      let marker = calls.current.get(trip.id);
+      const label = document.createElement('span');
+      label.textContent = `${trip.id} · ${trip.transferLocation ? 'Transfer pickup' : trip.from}`;
+      if (!marker) {
+        marker = L.marker(location, {
+          icon: L.divIcon({ className: 'call-beacon', html: '<span class="call-ring"></span><span class="call-ring call-ring-second"></span><span class="call-dot"></span>', iconSize: [20, 20], iconAnchor: [10, 10] }),
+          title: `Pickup call ${trip.id}`,
+          zIndexOffset: -100,
+        }).bindTooltip(label).on('click', () => {
+          const unit = snapshotRef.current.vehicles.find(v => v.tripId === trip.id);
+          if (unit) onSelectRef.current(unit.id);
+        }).addTo(g);
+        calls.current.set(trip.id, marker);
+      } else { marker.setLatLng(location); marker.setTooltipContent(label); }
+    }
     const selectedVehicle = snapshot.vehicles.find((v) => v.id === selected);
     const selectedTrip = snapshot.trips.find((t) => t.id === selectedVehicle?.tripId);
-    if (selectedTrip) {
+    if (selectedTrip?.status === 'onboard') {
       const point = target(selectedTrip);
       const tooltip = document.createElement('span');
       tooltip.textContent = selectedTrip.status === 'onboard'
@@ -180,18 +204,31 @@ export default function CityMap({
     previousMinute.current = snapshot.minute;
 
     const update = (progress: number) => {
-      for (const { from, to, marker, path } of movements) {
-        const position: Position = [
+      for (const { from, to, marker, path, route, remaining } of movements) {
+        let point: Position = [
           from[0] + (to[0] - from[0]) * progress,
           from[1] + (to[1] - from[1]) * progress,
         ];
-        if(path.length>1){
-          const lengths=path.slice(1).map((p,i)=>distance(path[i],p));
-          let left=lengths.reduce((a,b)=>a+b,0)*progress;
-          let point:Position=path[path.length-1];
-          for(let i=0;i<lengths.length;i++){if(left<=lengths[i]&&lengths[i]>0){const t=left/lengths[i];point=[path[i][0]+(path[i+1][0]-path[i][0])*t,path[i][1]+(path[i+1][1]-path[i][1])*t];break;}left-=lengths[i];}
-          marker.setLatLng(point);
-        }else marker.setLatLng(position);
+        let untraveled: Position[] = [];
+        if (path.length > 1) {
+          const lengths = path.slice(1).map((p, i) => distance(path[i], p));
+          let left = lengths.reduce((a, b) => a + b, 0) * progress;
+          point = path[path.length - 1];
+          for (let i = 0; i < lengths.length; i++) {
+            if (left <= lengths[i] && lengths[i] > 0) {
+              const t = left / lengths[i];
+              point = [path[i][0] + (path[i+1][0] - path[i][0]) * t,
+                path[i][1] + (path[i+1][1] - path[i][1]) * t];
+              untraveled = path.slice(i + 1);
+              break;
+            }
+            left -= lengths[i];
+          }
+        }
+        marker.setLatLng(point);
+        // Start the highlight at the displayed marker, retaining road bends ahead.
+        // Include the rest of this animated tick before the authoritative route tail.
+        route?.setLatLngs([point, ...untraveled, ...remaining]);
       }
     };
 

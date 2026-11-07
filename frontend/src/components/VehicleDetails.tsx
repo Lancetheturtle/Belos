@@ -16,7 +16,7 @@ export default function VehicleDetails({ snapshot: s, selected, onSelect: setSel
               <summary>
                 <span>
                   <Ambulance size={17} />
-                  Selected ambulance
+                  Ambulance details
                 </span>
                 <span className="summary-meta">{selected}</span>
               </summary>
@@ -35,7 +35,7 @@ export default function VehicleDetails({ snapshot: s, selected, onSelect: setSel
                 </select>
                 <div className="unit-state">
                   <span
-                    className={`dot ${v.outOfService ? 'gray' : held ? 'orange' : ''}`}
+                    className={`dot ${v.outOfService ? 'gray' : v.tripId || held ? '' : 'available'}`}
                   />
                   {v.outOfService
                     ? 'Out of service'
@@ -53,7 +53,7 @@ export default function VehicleDetails({ snapshot: s, selected, onSelect: setSel
                       : vehicleTrip.from}
                   </p>
                 )}
-                <DisruptionControls vehicle={v} busy={busy} onAction={act} />
+                <details className="report-problem"><summary>Report a problem</summary><DisruptionControls vehicle={v} busy={busy} onAction={act} /></details>
               </div>
             </details>
   );
