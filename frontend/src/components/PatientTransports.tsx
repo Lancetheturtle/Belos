@@ -22,8 +22,8 @@ export default function PatientTransports(){
   return status&&haystack.includes(search.trim().toLowerCase());
  }).sort((a,b)=>Date.parse(a.pickup_time)-Date.parse(b.pickup_time));
  return <>
- <details className="drawer dataset-patients" open><summary><span><Users size={17}/>Patient transports</span><span className="summary-meta">{data.transport_requests.length} people</span></summary>
- <div className="dataset-intro"><strong>Imported CSV snapshot</strong><p>Fictional patient IDs · Nov 7–8, 2026 · Eastern time. These records do not change with the live demo.</p></div>
+ <details className="drawer dataset-patients" open><summary><span><Users size={17}/>Patients</span><span className="summary-meta">{data.transport_requests.length} people</span></summary>
+ <div className="dataset-intro"><strong>Patient records · CSV snapshot</strong><p>60 fictional patients · Nov 7–8, 2026, Eastern time. Not connected to the live map yet.</p></div>
  <div className="dataset-counts"><span><strong>{counts.pickup}</strong> need pickup</span><span><strong>{counts.transporting}</strong> onboard</span><span><strong>{counts.completed}</strong> completed</span></div>
  <div className="dataset-filters"><label htmlFor="patient-filter">Show transports</label><select id="patient-filter" value={filter} onChange={e=>setFilter(e.target.value)}><option value="pickup">Still need pickup ({counts.pickup})</option><option value="transporting">Patient onboard / en route ({counts.transporting})</option><option value="en_route_to_pickup">Ambulance heading to pickup</option><option value="at_pickup">Ambulance at pickup</option><option value="completed">Completed ({counts.completed})</option><option value="all">All transports (60)</option></select><label htmlFor="patient-search">Search patient, trip, unit, or facility</label><input id="patient-search" type="search" placeholder="e.g. DEMO-P0006 or Samaritan" value={search} onChange={e=>setSearch(e.target.value)}/><span className="dataset-result" role="status">{rows.length} matching transports</span></div>
  <div className="dataset-list">{rows.map(t=>{
@@ -38,7 +38,7 @@ export default function PatientTransports(){
   </details>;
  })}{!rows.length&&<p className="dataset-empty">No transports match. Try another status or search.</p>}</div>
  </details>
- <details className="drawer dataset-fleet"><summary><span><Ambulance size={17}/>Dataset ambulances</span><span className="summary-meta">{data.ambulances.length} units</span></summary><p className="dataset-caption">CSV snapshot locations, separate from the four-unit live demo.</p>
+ <details className="drawer dataset-fleet"><summary><span><Ambulance size={17}/>Ambulances</span><span className="summary-meta">{data.ambulances.length} units</span></summary><p className="dataset-caption">CSV snapshot locations, separate from the four-unit live demo.</p>
  {data.ambulances.map(unit=>{
  const active=data.transport_requests.find(t=>t.ambulance_id===unit.ambulance_id&&['assigned','en_route_to_pickup','at_pickup','transporting'].includes(t.status));
  return <details className="dataset-record" key={unit.ambulance_id}><summary><span><strong>{unit.ambulance_id}</strong><span className={`pill ${tone(unit.status)}`}>{labels[unit.status]??words(unit.status)}</span></span></summary><dl><dt>Unit</dt><dd>{unit.unit_name}</dd><dt>Location in snapshot</dt><dd>{unit.current_location}<small>{unit.current_lat.toFixed(5)}, {unit.current_lng.toFixed(5)}</small></dd><dt>Current transport</dt><dd>{active?`${active.patient_id} · ${active.request_id}`:'No active transport'}{active&&<small>{active.pickup_location} → {active.dropoff_location}</small>}</dd><dt>Crew / capacity</dt><dd>{unit.crew_count} crew · {unit.stretcher_capacity} stretcher</dd><dt>Last location update</dt><dd>{stamp(unit.last_location_update_at)}</dd><dt>Shift ends</dt><dd>{stamp(unit.shift_end_at)}</dd></dl></details>;

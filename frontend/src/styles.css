@@ -902,8 +902,22 @@ select {
 .call-beacon{background:none;border:0;overflow:visible}
 .call-dot{position:absolute;left:5px;top:5px;width:10px;height:10px;border-radius:50%;background:#ffda45;box-shadow:0 0 10px #ffda4580;animation:call-flash 1.6s ease-in-out infinite}
 .call-ring{position:absolute;inset:0;border:2px solid #ffda45;border-radius:50%;animation:call-expand 2.4s linear infinite;pointer-events:none}
-@keyframes call-expand{0%{transform:scale(.5);opacity:1}60%{opacity:.8}100%{transform:scale(4);opacity:0}}
+@keyframes call-expand{0%{transform:scale(.5);opacity:1}60%{opacity:.8}100%{transform:scale(2);opacity:0}}
 @keyframes call-flash{0%,100%{opacity:1}50%{opacity:.35}}
 /* Explicitly requested call pulses stay visible; reduced-motion vehicle movement remains instant. */
 @media(prefers-reduced-motion:reduce){.call-dot{animation:none}}
 .call-ring-second{animation-delay:-1.2s}
+/* Two clear workspaces: live simulation and imported records. */
+[hidden]{display:none!important}
+.workspace-tabs{display:flex;gap:5px;margin:0 20px 18px;padding:4px;background:#0c151f;border:1px solid #253845;border-radius:8px}
+.workspace-tabs button{flex:1;border:0;background:transparent;color:#8da7b8;font-size:11px;padding:10px 6px}
+.workspace-tabs button[aria-selected=true]{background:#233b49;color:#e1f2f5;box-shadow:0 1px 5px #0003}
+.workspace-hint{font-size:10px;color:#8ea8b8;line-height:1.6;margin:14px 22px}
+.shift-controls{justify-content:flex-end;padding-top:0;padding-bottom:14px}
+.report-problem{margin-top:17px;border-top:1px solid #2a3d49;padding-top:12px}
+.report-problem>summary{font-size:11px;color:#c1d4df;cursor:pointer;padding:5px 0}
+.report-problem[open]>summary{margin-bottom:8px}
+.sidebar-title{padding-bottom:18px}
+.map-heading{padding-right:28px}
+.map-heading h1{font-size:23px}
+.dataset-intro p{font-size:10px}

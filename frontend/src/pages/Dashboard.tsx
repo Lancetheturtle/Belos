@@ -27,6 +27,7 @@ export default function Dashboard() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [live, setLive] = useState(true);
+  const [panel, setPanel] = useState<'live' | 'records'>('live');
   const lock = useRef(false);
   const snapshotRef = useRef<Snapshot | null>(null);
 
@@ -134,11 +135,11 @@ export default function Dashboard() {
       </header>
       <main className="map-workspace">
         <section className="map-stage" aria-label="Transport map workspace">
-          <CityMap snapshot={s} selected={selected} onSelect={setSelected} />
+          <CityMap snapshot={s} selected={selected} onSelect={(id) => { setSelected(id); setPanel('live'); }} />
           <div className="map-heading">
             <div className="eyebrow">TROY, NEW YORK</div>
-            <h1>Your fleet. One clear view.</h1>
-            <p>Medical transport coordination</p>
+            <h1>Transport map</h1>
+            <p>Click an ambulance to see its trip.</p>
           </div>
           <div className="map-bottom">
             <div className="map-legend">
@@ -165,15 +166,24 @@ export default function Dashboard() {
           <div className="sidebar-title">
             <div>
               <div className="eyebrow">SHIFT WORKSPACE</div>
-              <h2>Transport desk</h2>
+              <h2>Dispatch</h2>
             </div>
-            <span className="pill neutral">{s.trips.length} trips</span>
+            <span className="pill neutral">{panel === 'live' ? 'Live demo' : 'CSV snapshot'}</span>
           </div>
           {error && (
             <div className="error" role="alert">
               {error}
             </div>
           )}
+          <div className="workspace-tabs" role="tablist" aria-label="Workspace">
+            <button id="live-tab" role="tab" aria-selected={panel === 'live'} aria-controls="live-panel" onClick={() => setPanel('live')}>Live map</button>
+            <button id="records-tab" role="tab" aria-selected={panel === 'records'} aria-controls="records-panel" onClick={() => setPanel('records')}>Patient records</button>
+          </div>
+          <div className="sidebar-sections">
+            <div id="records-panel" role="tabpanel" aria-labelledby="records-tab" hidden={panel !== 'records'}>
+              <PatientTransports />
+            </div>
+            <div id="live-panel" role="tabpanel" aria-labelledby="live-tab" hidden={panel !== 'live'}>
           <div className="shift-controls">
 
             <button
@@ -183,18 +193,17 @@ export default function Dashboard() {
               onClick={() => setLive((running) => !running)}
             >
               {live ? <Pause size={14} /> : <Play size={14} />}
-              {live ? 'Pause live' : 'Resume live'}
+              {live ? 'Pause simulation' : 'Resume simulation'}
             </button>
           </div>
-          <div className="sidebar-sections">
-            <PatientTransports />
+            <p className="workspace-hint">Choose a unit below or click one on the map.</p>
             <VehicleDetails snapshot={s} selected={selected} onSelect={setSelected} busy={busy} onAction={act} />
             <TransportSchedule snapshot={s} available={available} busy={busy} onAction={act} />
             <details className="drawer fleet">
               <summary>
                 <span>
                   <Activity size={17} />
-                  Fleet status
+                  Ambulances
                 </span>
                 <span className="summary-meta">{s.vehicles.length} units</span>
               </summary>
@@ -218,7 +227,7 @@ export default function Dashboard() {
               <summary>
                 <span>
                   <MapPin size={17} />
-                  Shift updates
+                  Recent activity
                 </span>
                 <span className="summary-meta">{s.events.length}</span>
               </summary>
@@ -242,6 +251,7 @@ export default function Dashboard() {
                 resume live movement using the control above.
               </p>
             </details>
+            </div>
           </div>
           <div className="sidebar-footer">
             <span className="dot" />

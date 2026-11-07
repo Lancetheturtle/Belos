@@ -14,7 +14,7 @@ export default function TransportSchedule({ snapshot: s, available, busy, onActi
               <summary>
                 <span>
                   <Clock3 size={17} />
-                  Transport schedule
+                  Demo trips
                 </span>
                 <span className="summary-meta">
                   {pending.length} unassigned
