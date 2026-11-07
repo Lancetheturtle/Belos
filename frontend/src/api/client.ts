@@ -1,6 +1,6 @@
 import type { Action, Snapshot } from '../types';
 import { applyAction, createScenario } from '../mocks/simulation';
-export const isDemo=import.meta.env.VITE_DATA_MODE!=='api';
+export const isDemo=false;
 const base=(import.meta.env.VITE_API_BASE_URL||'http://127.0.0.1:8000').replace(/\/$/,'');
 async function request(path:string,action?:Action):Promise<Snapshot>{
  const response=await fetch(`${base}${path}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action??{}),signal:AbortSignal.timeout(10000)});
