@@ -84,3 +84,26 @@ def startup_event():
         print("Successfully connected and initialized tables!")
     except Exception as e:
         print(f"CRITICAL: Could not connect to database: {e}")
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from backend.database import get_db
+from backend.services.dispatch import assign_best_truck_to_call
+
+router = APIRouter(prefix="/calls", tags=["Dispatch"])
+
+@router.post("/{call_id}/dispatch")
+def dispatch_truck_for_call(call_id: int, call_lat: float, call_lon: float, db: Session = Depends(get_db)):
+    truck = assign_best_truck_to_call(db, call_id, call_lat, call_lon)
+    if not truck:
+        raise HTTPException(status_code=404, detail="No available trucks found for dispatch.")
+    return {"message": "Truck successfully assigned", "truck_id": truck.id, "call_id": call_id}
+
+from backend.services.dispatch import reroute_ambulance_to_call
+
+@app.post("/trucks/{truck_id}/reroute/{call_id}")
+def api_reroute_truck(truck_id: int, call_id: int, db: Session = Depends(get_db)):
+    result = reroute_ambulance_to_call(db, truck_id, call_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
