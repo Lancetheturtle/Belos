@@ -51,3 +51,25 @@ test('small live ticks obey delays and vehicle outages', () => {
   assert.deepEqual(state.vehicles[1].position, stopped[1]);
   assert.notDeepEqual(state.vehicles[2].position, stopped[2]);
 });
+
+import { prepareRoads } from '../api/roadRouting';
+test('road demo follows multi-point roads and waits for loading and unloading', async()=>{
+ let s=await prepareRoads(createScenario());
+ assert.ok(s.vehicles[0].route!.length>10);
+ assert.ok(s.trips[0].transportRoute!.length>10);
+ const route=s.vehicles[0].route!;
+ s=applyAction(s,{type:'advance',minutes:1});
+ assert.ok(s.vehicles[0].routeIndex!>0);
+ assert.ok(s.vehicles[0].routeIndex!<route.length-1);
+ s=applyAction(s,{type:'advance',minutes:4});
+ assert.equal(s.vehicles[0].holdReason,'Loading at pickup');
+ const stopped=[...s.vehicles[0].position];
+ s=applyAction(s,{type:'advance',minutes:1});
+ assert.deepEqual(s.vehicles[0].position,stopped);
+ for(let i=0;i<30&&!s.vehicles[0].unloadingUntil;i++)s=applyAction(s,{type:'advance',minutes:.5});
+ assert.ok(s.vehicles[0].unloadingUntil);
+ assert.equal(s.trips[0].status,'onboard');
+ s=applyAction(s,{type:'advance',minutes:3});
+ assert.equal(s.trips[0].status,'complete');
+ assert.equal(s.vehicles[0].tripId,undefined);
+});

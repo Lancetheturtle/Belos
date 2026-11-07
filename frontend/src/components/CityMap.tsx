@@ -3,7 +3,7 @@ import L from 'leaflet';
 
 import type { Position, Snapshot } from '../types';
 import { isDemo } from '../api/client';
-import { target } from '../mocks/simulation';
+import { distance, target } from '../mocks/simulation';
 
 // Match the dashboard's snapshot update cadence. The map interpolates between
 // real simulation positions; it never invents or saves its own dispatch state.
@@ -15,6 +15,7 @@ type Movement = {
   marker: L.CircleMarker;
   route?: L.Polyline;
   destination?: Position;
+  path: Position[];
 };
 
 export default function CityMap({
@@ -128,14 +129,14 @@ export default function CityMap({
       if (trip) {
         destination = target(trip);
         if (!route) {
-          route = L.polyline([from, destination], { dashArray: '6 7' }).addTo(g);
+          route = L.polyline([from, destination], { interactive: false, opacity: .85 }).addTo(g);
           routes.current.set(vehicle.id, route);
         }
         route.setStyle({
           color: vehicle.id === selected ? '#55dec1' : '#618d88',
           weight: vehicle.id === selected ? 4 : 2,
         });
-        route.setLatLngs([from, destination]);
+        route.setLatLngs(vehicle.route ?? []);
       } else if (route) {
         route.remove();
         routes.current.delete(vehicle.id);
@@ -143,7 +144,7 @@ export default function CityMap({
       }
 
       marker.bringToFront();
-      movements.push({ from, to: vehicle.position, marker, route, destination });
+      movements.push({ from, to: vehicle.position, marker, route, destination, path: vehicle.movementPath ?? [from, vehicle.position] });
     }
 
     const selectedVehicle = snapshot.vehicles.find((v) => v.id === selected);
@@ -179,13 +180,18 @@ export default function CityMap({
     previousMinute.current = snapshot.minute;
 
     const update = (progress: number) => {
-      for (const { from, to, marker, route, destination } of movements) {
+      for (const { from, to, marker, path } of movements) {
         const position: Position = [
           from[0] + (to[0] - from[0]) * progress,
           from[1] + (to[1] - from[1]) * progress,
         ];
-        marker.setLatLng(position);
-        if (route && destination) route.setLatLngs([position, destination]);
+        if(path.length>1){
+          const lengths=path.slice(1).map((p,i)=>distance(path[i],p));
+          let left=lengths.reduce((a,b)=>a+b,0)*progress;
+          let point:Position=path[path.length-1];
+          for(let i=0;i<lengths.length;i++){if(left<=lengths[i]&&lengths[i]>0){const t=left/lengths[i];point=[path[i][0]+(path[i+1][0]-path[i][0])*t,path[i][1]+(path[i+1][1]-path[i][1])*t];break;}left-=lengths[i];}
+          marker.setLatLng(point);
+        }else marker.setLatLng(position);
       }
     };
 

@@ -11,11 +11,27 @@ export function target(t:Trip):Position { return t.status==='onboard'?t.destinat
 export function eta(s:Snapshot,t:Trip):number|null {
   if(t.status==='complete')return t.completedAt??s.minute;
   const v=s.vehicles.find(v=>v.id===t.vehicleId);if(!v||v.outOfService)return null;
-  return Math.max(s.minute,v.holdUntil)+distance(v.position,target(t))/(s.traffic?.25:.5);
+  const km = v.route ? remainingDistance(v) : distance(v.position,target(t));
+  return Math.max(s.minute,v.holdUntil,v.unloadingUntil??0)+km/(s.traffic?.25:.5);
 }
 export function late(s:Snapshot,t:Trip):number {
   if(t.actualPickup!==undefined)return Math.max(0,Math.ceil(t.actualPickup-t.scheduled-1e-7));
   return Math.max(0,Math.ceil((eta(s,t)??s.minute)-t.scheduled-1e-7));
+}
+export function remainingDistance(v:Vehicle):number {
+ if (!v.route) return 0;
+ let km=0, from=v.position;
+ for(let i=(v.routeIndex??0)+1;i<v.route.length;i++){km+=distance(from,v.route[i]);from=v.route[i];}
+ return km;
+}
+function moveOnRoad(v:Vehicle, km:number):boolean {
+ const route=v.route!;let i=v.routeIndex??0;
+ while(i<route.length-1){
+  const next=route[i+1],segment=distance(v.position,next);
+  if(segment<=km+1e-9){km-=segment;v.position=[...next];i++;v.movementPath!.push([...v.position]);}
+  else {const p=km/segment;v.position=[v.position[0]+(next[0]-v.position[0])*p,v.position[1]+(next[1]-v.position[1])*p];v.movementPath!.push([...v.position]);break;}
+ }
+ v.routeIndex=i;return i>=route.length-1;
 }
 function event(s:Snapshot,message:string){s.events=[`${clock(s.minute)} · ${message}`,...s.events].slice(0,8);}
 export function createScenario():Snapshot {
@@ -38,19 +54,29 @@ export function applyAction(state:Snapshot,action:Action):Snapshot {
     if(!Number.isFinite(action.minutes)||action.minutes<=0||action.minutes>60)throw new Error('Advance must be between 0 and 60 minutes.');
     // Step at one-second resolution so travel, holds, and pickup times remain consistent.
     const end=s.minute+action.minutes;
+    for(const v of s.vehicles)v.movementPath=[[...v.position]];
     while(s.minute<end-1e-8){
       const dt=Math.min(1/60,end-s.minute); s.minute+=dt;
       for(const v of s.vehicles){
-        if(v.outOfService||v.holdUntil>s.minute||!v.tripId)continue;
-        const t=s.trips.find(t=>t.id===v.tripId)!; const dest=target(t), km=distance(v.position,dest);
+        if(v.outOfService||v.holdUntil>s.minute+1e-8||!v.tripId)continue;
+        const t=s.trips.find(t=>t.id===v.tripId)!;
+        if(v.unloadingUntil!==undefined){
+          if(s.minute>=v.unloadingUntil){t.status='complete';t.completedAt=s.minute;delete v.tripId;delete v.unloadingUntil;delete v.route;delete v.routeIndex;event(s,`${t.id} delivered. ${v.id} available.`);}
+          continue;
+        }
+        const dest=target(t), km=distance(v.position,dest);
         const fraction=km>0?Math.min(1,(s.traffic?.25:.5)*dt/km):1;
-        v.position=[v.position[0]+(dest[0]-v.position[0])*fraction,v.position[1]+(dest[1]-v.position[1])*fraction];
-        if(fraction===1){
+        const arrived=v.route?moveOnRoad(v,(s.traffic?.25:.5)*dt):fraction===1;
+        if(!v.route)v.position=[v.position[0]+(dest[0]-v.position[0])*fraction,v.position[1]+(dest[1]-v.position[1])*fraction];
+        if(arrived){
           if(t.status==='pickup'){
-            if(s.minute+1e-8<t.scheduled)continue; // Wait for scheduled pickup.
+            if(s.minute+1e-8<t.scheduled){if(v.route){v.holdUntil=t.scheduled;v.holdReason='Waiting at pickup';}continue;} // Wait for scheduled pickup.
             if(t.actualPickup===undefined)t.actualPickup=s.minute;
-            t.status='onboard';delete t.transferLocation;event(s,`${v.id} picked up ${t.id}. Heading to ${t.to}.`);
+            t.status='onboard';delete t.transferLocation;
+            if(t.transportRoute){v.route=structuredClone(t.transportRoute);v.routeIndex=0;v.position=[...v.route[0]];v.holdUntil=s.minute+2;v.holdReason='Loading at pickup';}
+            event(s,`${v.id} picked up ${t.id}. Heading to ${t.to}.`);
           }else if(t.status==='onboard'){
+            if(v.route){v.unloadingUntil=s.minute+2;v.holdUntil=s.minute+2;v.holdReason='Unloading at destination';event(s,`${v.id} arrived at ${t.to}. Waiting to unload.`);continue;}
             t.status='complete';t.completedAt=s.minute;delete v.tripId;event(s,`${t.id} delivered to ${t.to}. ${v.id} is available.`);
           }
         }
@@ -62,7 +88,7 @@ export function applyAction(state:Snapshot,action:Action):Snapshot {
   if(action.type==='assign'){
     const t=s.trips.find(t=>t.id===action.tripId);if(!t||!['waiting','transfer'].includes(t.status))throw new Error('This transport cannot be assigned.');
     if(!free(v,s))throw new Error('Choose an available ambulance.');
-    t.status='pickup';t.vehicleId=v.id;v.tripId=t.id;event(s,`${t.id} assigned to ${v.id}${t.transferLocation?' for a simulated transfer':''}.`);return s;
+    t.status='pickup';t.vehicleId=v.id;v.tripId=t.id;delete v.route;delete v.routeIndex;delete v.unloadingUntil;event(s,`${t.id} assigned to ${v.id}${t.transferLocation?' for a simulated transfer':''}.`);return s;
   }
   if(action.type==='outage'){
     if(v.outOfService)return s;
@@ -72,7 +98,7 @@ export function applyAction(state:Snapshot,action:Action):Snapshot {
       if(onboard)t.transferLocation=[...v.position];delete t.vehicleId;
       event(s,`${t.id} ${t.status==='transfer'?'needs a transfer at the stopped vehicle':'needs reassignment'}.`);
     }
-    delete v.tripId;v.outOfService=true;v.holdUntil=s.minute;v.holdReason='';event(s,`${v.id} is out of service.`);return s;
+    delete v.tripId;delete v.route;delete v.routeIndex;delete v.unloadingUntil;v.outOfService=true;v.holdUntil=s.minute;v.holdReason='';event(s,`${v.id} is out of service.`);return s;
   }
   if(action.type==='restore'){v.outOfService=false;event(s,`${v.id} returned to service. Assign a transport when ready.`);return s;}
   if(v.outOfService)throw new Error('Return this ambulance to service first.');

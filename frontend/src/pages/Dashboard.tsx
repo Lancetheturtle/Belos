@@ -17,7 +17,7 @@ import VehicleDetails from '../components/VehicleDetails';
 import TransportSchedule from '../components/TransportSchedule';
 import ConnectionStatus from '../components/ConnectionStatus';
 // Accelerated demo time makes movement visible without waiting minutes per trip.
-const LIVE_SPEED = 30; // One real second is thirty simulated seconds.
+const LIVE_SPEED = 15; // One real second is thirty simulated seconds.
 const LIVE_TICK_MS = 200;
 
 export default function Dashboard() {
@@ -181,7 +181,7 @@ export default function Dashboard() {
               </span>
             </div>
             <span className="map-note">
-              Synthetic data · {live ? 'Live simulation' : 'Paused'} at {LIVE_SPEED}× speed · Illustrative direct routes
+              Synthetic data · {live ? 'Live simulation' : 'Paused'} at {LIVE_SPEED}× speed · Highlighted driving routes
             </span>
           </div>
         </section>
@@ -275,9 +275,9 @@ export default function Dashboard() {
                 <span>About this demo</span>
               </summary>
               <p>
-                Scheduled medical pickups and facility transfers. Direct-line
+                Scheduled medical pickups and facility transfers. Road-route
                 travel at 30 km/h; road slowdown halves speed. Transfers are
-                simulated. The demo runs automatically at 30× speed. Pause or
+                simulated. The demo runs automatically at 15× speed. Pause or
                 resume live movement using the control above.
               </p>
             </details>
