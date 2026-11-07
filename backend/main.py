@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
+from sqlalchemy import text
+
 
 # Use relative imports with dots (.) for files inside the same backend folder
 from .database import engine, get_db, Base
@@ -50,3 +52,29 @@ def transport_action(payload: ActionPayload, db: Session = Depends(get_db)):
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
+@app.get("/health/db")
+def test_db_connection(db: Session = Depends(get_db)):
+    try:
+        # Execute a simple raw SQL query to test live connectivity
+        result = db.execute(text("SELECT 1")).scalar()
+        return {
+            "status": "success",
+            "message": "Successfully connected to Tiger Data!",
+            "test_query_result": result
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database connection failed: {str(e)}"
+        )
+app = FastAPI()
+
+@app.on_event("startup")
+def startup_event():
+    print("Attempting to connect to Tiger Data...")
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("Successfully connected and initialized tables!")
+    except Exception as e:
+        print(f"CRITICAL: Could not connect to database: {e}")
