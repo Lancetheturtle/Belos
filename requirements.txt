@@ -1,2 +1,1 @@
 pip freeze > requirements.txt
-https://belos-backend.vercel.app
