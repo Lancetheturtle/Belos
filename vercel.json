@@ -1,15 +1,16 @@
 {
   "version": 2,
-  "builds": [
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "frontend/dist",
+  "rewrites": [
     {
-      "src": "backend/main.py",
-      "use": "@vercel/python"
-    }
-  ],
-  "routes": [
+      "source": "/api/:path*",
+      "destination": "/api/index.py"
+    },
     {
-      "src": "/(.*)",
-      "dest": "backend/main.py"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
