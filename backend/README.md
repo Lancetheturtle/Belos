@@ -1,15 +1,9 @@
-# Backend
+# Transport backend
 
-Owner: teammate 2
+Owner: teammate 2. Python modules are still placeholders.
 
-Planned stack: Python and FastAPI.
+Implement scheduled pickups, destination trips, unit availability, crew holds, traffic delays, and out-of-service reassignment. Preserve a simulated onboard patient's location during a breakdown and require explicit replacement assignment.
 
-- `main.py`: application entry point and API routes.
-- `models.py`: request, response, vehicle, and incident schemas.
-- `dispatch.py`: baseline and fleet-wide assignment algorithms.
-- `routing.py`: route geometry and travel-time integration.
-- `simulation.py`: simulation clock and authoritative state transitions.
-- `database.py`: persistence for experiment records, if needed.
+See ../contracts/frontend-api.md for the current proposed transport API and ../frontend/src/types/index.ts for data shapes. It replaces the earlier emergency-incident dispatch contract. The frontend currently runs an isolated demo adapter; agree on authoritative road-routing ETA fields before connecting the backend.
 
-These modules are placeholders. Add dependencies and install/run commands when implementing the service.
-Coordinate endpoint payloads with the frontend in `contracts/`.
+Suggested module roles: main.py for API, models.py for transport schemas, dispatch.py for unit assignment, routing.py for routes/ETAs, simulation.py for shift state and clock, database.py for schedule and event persistence.

@@ -1,42 +1,33 @@
-# Belos frontend
+# Belos medical transport frontend
 
-React + TypeScript + Vite, Tailwind CSS, Leaflet, and Lucide icons.
+React, TypeScript, Vite, Tailwind CSS, Leaflet. Node 22.12+ required.
 
-## Run locally
+## Run and check
 
-Requires Node.js 22.12+ (Node 24 works).
+From this folder: `npm install`, then `npm run dev`. Open the printed localhost address.
+`npm test` checks disruption and reassignment behavior. `npm run build` checks TypeScript and creates the production build.
 
-```sh
-npm install
-npm run dev
-```
+## Simple demo
 
-Open the localhost URL printed by Vite. Production: `npm run build`, then `npm run preview`. Tests: `npm test`.
+The 09:00 shift has four ambulances and six scheduled transports between fictional facilities around Troy. Three pickups start assigned.
 
-## Demo walkthrough
+1. Choose an ambulance under What changed?
+2. Add a 10-minute crew delay or 15-minute emergency interruption. Holds stack and update its trip ETA.
+3. Toggle Road slowdown to halve travel speed for all units.
+4. Mark an ambulance out of order. Before pickup, its trip needs reassignment. With a patient onboard, a transfer is flagged at the stopped vehicle's location.
+5. Choose an available replacement in the schedule. The original unit does not regain that trip when returned to service.
+6. Advance 5 min to move the clock and vehicles. Units wait until scheduled pickup time, deliver to the destination, and become available. Reset demo starts over.
 
-1. Load Routine operations or Disaster surge.
-2. Choose traffic, weather, and assignment policy.
-3. Click Run dispatch. Routes, unit statuses, and comparison results update.
-4. Click Play; adjust playback speed to see units arrive. Pause freezes simulation time.
-5. Use + in the incident queue to add a preset incident. Click an incident to locate it.
-6. Reset scenario restores its original fleet and incidents. The sidebar chart icon opens analytics.
+This is a transport scheduling simulator, not a 911 dispatch app. There are no triage priorities or emergency-call generation. Emergency interruption means a generic hold affecting an existing unit, not a new 911 call or medical procedure.
 
-Demo data is synthetic. Routes are straight lines, not roads. Estimates assume 32 km/h plus 30 seconds of dispatch overhead, heavy traffic 1.65x travel time, rain 1.2x, and 0.35 kg CO2/km. The demo optimizer minimizes summed travel estimates via small exact assignment; it ignores priority, clinical capabilities, coverage, and service time. Units become available immediately on arrival. Metrics compare only the most recent dispatch batch, not a full experiment. These are frontend demonstration calculations, not the team's final dispatch implementation.
+Demo limitations: direct-line travel at 30 km/h, no loading/unloading duration, generic units with no capability constraints, and simulated immediate patient handoffs. Map tiles require internet. Pickup delay compares estimated or actual pickup against the scheduled time; drop-off ETA is shown once onboard. Needs attention counts active late pickups, held transports, and transfers. Unassigned trips have no ETA.
 
-Map tiles require internet and use OpenStreetMap with visible attribution. If tiles fail, markers and controls continue working.
+## Backend integration
 
-## Backend handoff
+The transport contract replaces the earlier 911-style endpoints. See `../contracts/frontend-api.md`. Default demo mode requires no backend. For API mode, copy `.env.example` to `.env.local`, set VITE_DATA_MODE=api and VITE_API_BASE_URL, and restart Vite. API errors are displayed; no silent demo fallback.
 
-Default mode is demo and needs no backend. Copy `.env.example` to `.env.local`, set `VITE_DATA_MODE=api` and `VITE_API_BASE_URL`, then restart Vite after the backend implements `../contracts/frontend-api.md`.
+`src/api/client.ts` is the single API boundary. `src/types/index.ts` defines transport snapshots and actions. `src/mocks/simulation.ts` contains isolated demo logic and display helpers. `src/pages/Dashboard.tsx` contains the simplified screen.
 
-- `src/api/client.ts`: sole HTTP integration point; API errors are shown, never silently replaced with demo data.
-- `src/types/index.ts`: proposed shared data shapes.
-- `src/mocks/simulation.ts`: isolated demo adapter, replaceable by backend endpoints.
-- `src/components/CityMap.tsx`: Leaflet rendering.
-- `src/pages/Dashboard.tsx`: dashboard and actions.
-- `src/styles.css`: responsive design and theme.
+## Map workspace
 
-In API mode the backend owns state and time. The UI requests advances and renders returned snapshots. Configure backend CORS for the Vite origin. Do not put secrets in VITE_ variables; they are public browser configuration.
-
-Official setup references: https://vite.dev/guide/ , https://tailwindcss.com/docs/installation/using-vite , https://leafletjs.com/reference-1.9.4.html .
+The home screen is a dark map with a right sidebar. Expand Selected ambulance, Transport schedule, Fleet status, or Shift updates for details. Click a unit on the map or select it in the sidebar. The schedule retains the replacement assignment dropdowns. On mobile the map stays first and the sidebar sections stack underneath. OpenStreetMap tiles are styled dark using a CSS filter applied only to the tile pane; markers, labels, controls, and attribution keep their own styling.

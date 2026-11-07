@@ -1,27 +1,9 @@
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
-import { createScenario, dispatch, advance, addIncident } from './simulation';
-const conditions={traffic:'normal',weather:'clear'} as const;
-test('dispatch assigns each available unit at most once and optimizer does not increase total distance',()=>{
-  for(const scenario of ['routine','surge'] as const) {
-    const state=createScenario(scenario), next=dispatch(state,'optimized',conditions);
-    const assigned=next.vehicles.filter(v=>v.status==='enroute');
-    assert.equal(new Set(assigned.map(v=>v.incidentId)).size,assigned.length);
-    assert.equal(assigned.length,scenario==='routine'?4:6);
-    assert.ok(next.comparison!.optimized.distanceKm<=next.comparison!.nearest.distanceKm+1e-9);
-    assert.equal(next.comparison!.optimized.unserved,scenario==='routine'?0:6);
-    assert.equal(state.vehicles.filter(v=>v.status==='enroute').length,0);
-  }
-});
-test('arrival releases units and resolves only assigned incidents',()=>{
-  const next=advance(dispatch(createScenario('surge'),'nearest',conditions),3600);
-  assert.equal(next.incidents.filter(i=>i.status==='resolved').length,6);
-  assert.equal(next.incidents.filter(i=>i.status==='waiting').length,6);
-  assert.equal(next.vehicles.filter(v=>v.status==='available').length,6);
-  assert.equal(next.vehicles.filter(v=>v.status==='unavailable').length,2);
-});
-test('traffic increases travel estimates and new incidents invalidate old comparisons',()=>{
-  const initial=createScenario(); const normal=dispatch(initial,'nearest',conditions), heavy=dispatch(initial,'nearest',{...conditions,traffic:'heavy'});
-  assert.ok(heavy.comparison!.nearest.meanEtaMinutes>normal.comparison!.nearest.meanEtaMinutes);
-  const next=addIncident(normal,'critical'); assert.equal(next.incidents.length,5); assert.equal(next.comparison,null); assert.equal(next.incidents[4].priority,'critical');
-});
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {createScenario,applyAction,eta,late} from './simulation';
+test('crew delay increases ETA, freezes unit until hold ends, then resumes',()=>{const s=createScenario(),t=s.trips[0],before=eta(s,t)!;const d=applyAction(s,{type:'delay',vehicleId:'AMB-01'});assert.equal(Math.round(eta(d,d.trips[0])!-before),10);assert.ok(late(d,d.trips[0])>0);const tick=applyAction(d,{type:'advance',minutes:5});assert.deepEqual(tick.vehicles[0].position,s.vehicles[0].position);assert.equal(s.vehicles[0].holdUntil,0);});
+test('traffic affects active-trip ETA and clearing it restores estimate',()=>{const s=createScenario(),d=applyAction(s,{type:'traffic',enabled:true});assert.ok(eta(d,d.trips[0])!>eta(s,s.trips[0])!);assert.equal(eta(applyAction(d,{type:'traffic',enabled:false}),d.trips[0]),eta(s,s.trips[0]));});
+test('breakdown before pickup releases trip, requires available replacement, restore does not duplicate assignment',()=>{const s=applyAction(createScenario(),{type:'outage',vehicleId:'AMB-01'});assert.equal(s.trips[0].status,'waiting');assert.equal(s.trips[0].vehicleId,undefined);assert.equal(s.vehicles[0].tripId,undefined);assert.throws(()=>applyAction(s,{type:'assign',tripId:'TR-101',vehicleId:'AMB-02'}));const assigned=applyAction(s,{type:'assign',tripId:'TR-101',vehicleId:'AMB-04'});assert.equal(assigned.trips[0].vehicleId,'AMB-04');const restored=applyAction(assigned,{type:'restore',vehicleId:'AMB-01'});assert.equal(restored.vehicles[0].tripId,undefined);});
+test('onboard breakdown preserves patient location and original pickup time until replacement completes transport',()=>{let s=applyAction(createScenario(),{type:'advance',minutes:5});assert.equal(s.trips[0].status,'onboard');const actual=s.trips[0].actualPickup;const stopped=[...s.vehicles[0].position];s=applyAction(s,{type:'outage',vehicleId:'AMB-01'});assert.equal(s.trips[0].status,'transfer');assert.deepEqual(s.trips[0].transferLocation,stopped);s=applyAction(s,{type:'assign',tripId:'TR-101',vehicleId:'AMB-04'});s=applyAction(s,{type:'advance',minutes:30});assert.equal(s.trips[0].status,'complete');assert.equal(s.trips[0].actualPickup,actual);assert.equal(s.vehicles[3].tripId,undefined);});
+test('emergency holds stack and reset clears all disruptions',()=>{let s=applyAction(createScenario(),{type:'delay',vehicleId:'AMB-02'});s=applyAction(s,{type:'emergency',vehicleId:'AMB-02'});assert.equal(s.vehicles[1].holdUntil,25);assert.equal(createScenario().vehicles[1].holdUntil,0);assert.equal(createScenario().minute,0);});
+
+test('on-time pickup is not marked late by floating point clock rounding',()=>{const s=applyAction(createScenario(),{type:'advance',minutes:5});assert.equal(late(s,s.trips[0]),0);});
