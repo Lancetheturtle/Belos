@@ -4,7 +4,8 @@ export function distance(a:Position,b:Position):number {
   const h=Math.sin(dLat/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dLng/2)**2;
   return 6371*2*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));
 }
-export const clock=(minute:number)=>{const n=9*60+Math.ceil(minute-1e-7);return `${String(Math.floor(n/60)%24).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;};
+import { clock } from '../utils/time';
+export { clock } from '../utils/time';
 export const free=(v:Vehicle,s:Snapshot)=>!v.outOfService&&!v.tripId&&v.holdUntil<=s.minute;
 export function target(t:Trip):Position { return t.status==='onboard'?t.destination:t.transferLocation??t.pickup; }
 export function eta(s:Snapshot,t:Trip):number|null {

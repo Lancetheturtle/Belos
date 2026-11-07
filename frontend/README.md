@@ -16,7 +16,7 @@ The 09:00 shift has four ambulances and six scheduled transports between fiction
 3. Toggle Road slowdown to halve travel speed for all units.
 4. Mark an ambulance out of order. Before pickup, its trip needs reassignment. With a patient onboard, a transfer is flagged at the stopped vehicle's location.
 5. Choose an available replacement in the schedule. The original unit does not regain that trip when returned to service.
-6. Advance 5 min to move the clock and vehicles. Units wait until scheduled pickup time, deliver to the destination, and become available. Reset demo starts over.
+6. Ambulances glide across the map automatically during the live demo. One real second advances thirty simulated seconds. Pause/Resume live to stop or restart the demo clock. Units wait for scheduled pickup time, deliver to their destination, and become available. Reset demo starts over.
 
 This is a transport scheduling simulator, not a 911 dispatch app. There are no triage priorities or emergency-call generation. Emergency interruption means a generic hold affecting an existing unit, not a new 911 call or medical procedure.
 

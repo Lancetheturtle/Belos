@@ -4,7 +4,22 @@ A medical transport coordination prototype for scheduled pickups and facility tr
 
 ## Start
 
-In frontend/: `npm install`, then `npm run dev`. See frontend/README.md for a walkthrough and contracts/frontend-api.md for the proposed backend interface.
+Run the frontend **from the repository root** (the directory containing `frontend/` and `backend/`):
+
+```powershell
+npm ci
+npm run dev
+```
+
+Open the Vite localhost URL printed in the terminal. Additional root commands:
+
+```powershell
+npm test
+npm run build
+npm run preview
+```
+
+The root `package.json` forwards these commands to the `frontend` npm workspace. It does not start the Python backend; see `backend/README.md` for backend setup. Use `npm ci` with the root `package-lock.json` on a clean checkout. See `frontend/README.md` for the demo walkthrough and `contracts/frontend-api.md` for the backend contract.
 
 ## Ownership
 

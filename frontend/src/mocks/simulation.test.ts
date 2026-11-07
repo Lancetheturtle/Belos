@@ -7,3 +7,47 @@ test('onboard breakdown preserves patient location and original pickup time unti
 test('emergency holds stack and reset clears all disruptions',()=>{let s=applyAction(createScenario(),{type:'delay',vehicleId:'AMB-02'});s=applyAction(s,{type:'emergency',vehicleId:'AMB-02'});assert.equal(s.vehicles[1].holdUntil,25);assert.equal(createScenario().vehicles[1].holdUntil,0);assert.equal(createScenario().minute,0);});
 
 test('on-time pickup is not marked late by floating point clock rounding',()=>{const s=applyAction(createScenario(),{type:'advance',minutes:5});assert.equal(late(s,s.trips[0]),0);});
+test('advancing the demo moves active ambulances without moving unassigned units', () => {
+  const before = createScenario();
+  const after = applyAction(before, { type: 'advance', minutes: 1 });
+  assert.notDeepEqual(after.vehicles[0].position, before.vehicles[0].position);
+  assert.deepEqual(after.vehicles[3].position, before.vehicles[3].position);
+  assert.deepEqual(before.vehicles[0].position, [42.720, -73.687]);
+});
+
+test('held and out-of-service ambulances do not move when time advances', () => {
+  let state = createScenario();
+  state = applyAction(state, { type: 'delay', vehicleId: 'AMB-01' });
+  state = applyAction(state, { type: 'outage', vehicleId: 'AMB-02' });
+  const positions = state.vehicles.map((v) => v.position);
+  const after = applyAction(state, { type: 'advance', minutes: 5 });
+  assert.deepEqual(after.vehicles[0].position, positions[0]);
+  assert.deepEqual(after.vehicles[1].position, positions[1]);
+  assert.notDeepEqual(after.vehicles[2].position, positions[2]);
+});
+
+test('fractional live ticks move assigned vehicles continuously without moving idle units', () => {
+  let state = createScenario();
+  const startingPosition = [...state.vehicles[0].position];
+  const idlePosition = [...state.vehicles[3].position];
+  for (let i = 0; i < 8; i++) {
+    const previous = state.vehicles[0].position;
+    state = applyAction(state, { type: 'advance', minutes: 0.1 });
+    assert.ok(state.vehicles[0].position[0] > previous[0], 'assigned ambulance moves on every small tick');
+    assert.deepEqual(state.vehicles[3].position, idlePosition);
+  }
+  assert.ok(Math.abs(state.minute - 0.8) < 1e-6);
+  assert.ok(state.vehicles[0].position[0] > startingPosition[0]);
+});
+
+test('small live ticks obey delays and vehicle outages', () => {
+  let state = applyAction(createScenario(), { type: 'delay', vehicleId: 'AMB-01' });
+  state = applyAction(state, { type: 'outage', vehicleId: 'AMB-02' });
+  const stopped = state.vehicles.map((v) => [...v.position]);
+  for (let i = 0; i < 20; i++) {
+    state = applyAction(state, { type: 'advance', minutes: 0.1 });
+  }
+  assert.deepEqual(state.vehicles[0].position, stopped[0]);
+  assert.deepEqual(state.vehicles[1].position, stopped[1]);
+  assert.notDeepEqual(state.vehicles[2].position, stopped[2]);
+});

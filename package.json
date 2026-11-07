@@ -1,0 +1,14 @@
+{
+  "name": "belos",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace frontend",
+    "build": "npm run build --workspace frontend",
+    "test": "npm run test --workspace frontend",
+    "preview": "npm run preview --workspace frontend"
+  }
+}
