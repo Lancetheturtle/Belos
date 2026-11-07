@@ -1,0 +1,9 @@
+export type Position = [number, number]; // [latitude, longitude], NOT GeoJSON order
+export type Policy = 'nearest' | 'optimized';
+export type Conditions = { traffic: 'normal' | 'heavy'; weather: 'clear' | 'rain' };
+export type Vehicle = { id: string; position: Position; status: 'available' | 'enroute' | 'unavailable'; incidentId?: string; route?: Position[]; progress?: number; durationSeconds?: number };
+export type Incident = { id: string; name: string; location: Position; priority: 'critical' | 'urgent' | 'standard'; status: 'waiting' | 'assigned' | 'resolved' };
+export type Metrics = { meanEtaMinutes: number; distanceKm: number; co2Kg: number; assigned: number; unserved: number };
+export type Comparison = { nearest: Metrics; optimized: Metrics };
+export type Snapshot = { scenario: 'routine' | 'surge'; elapsedSeconds: number; vehicles: Vehicle[]; incidents: Incident[]; comparison: Comparison | null; events: string[] };
+export type SimulationAction = { action: 'advance'; seconds: number } | { action: 'incident'; priority: Incident['priority'] };
