@@ -35,3 +35,13 @@ The home screen is a dark map with a right sidebar. Expand Selected ambulance, T
 ## Current continuous road demo
 
 The latest demo starts moving automatically at 15x speed. Pause live / Resume live controls the clock. The Advance 5 min workflow is retired. Highlighted routes are OSRM driving paths; vehicles traverse the same geometry, wait for scheduled pickups, load for two simulated minutes, and wait two minutes to unload. Initial routes are cached in src/mocks/roadRoutes.json; new replacement routes require internet. See the road simulation section in contracts/frontend-api.md for optional route fields. Earlier direct-line descriptions above describe the retired prototype.
+
+## New map and dispatch features
+
+- Patient records: toggle Show 60 scheduled pickups on map; expand a patient to focus its pickup and destination. Purple markers are static CSV locations, not live patients.
+- Live map > Demo scenarios: run normal operations, AMB-01 breakdown, or AMB-01 crew delay. Presets replace the local shift and are disabled in API mode.
+- Replacement alerts open Demo trips for manual assignment. Assignment changes show observed before/after unit IDs; server history is used when supplied.
+- Live map > Optimization results: four KPI cards and baseline/optimized comparison. Example values are explicitly illustrative until the backend provides optimizationResults.
+- API mode reads GET /transport/state and polls it while running. Connection status reflects actual validated requests and offers Retry on failure. Reset is POST /transport/reset only. Backend owns the clock. Missing route geometry has an explicit warning.
+
+See ../contracts/frontend-api.md for the new optional result/history payloads and state endpoint. Tests include mocked HTTP errors, invalid snapshots, missing routes, and successful reconnection.

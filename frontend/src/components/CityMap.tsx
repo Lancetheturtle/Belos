@@ -1,3 +1,4 @@
+import scheduleData from '../data/transportDataset.json';
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 
@@ -14,7 +15,6 @@ type Movement = {
   to: Position;
   marker: L.CircleMarker;
   route?: L.Polyline;
-  destination?: Position;
   path: Position[];
   remaining: Position[];
 };
@@ -23,11 +23,24 @@ export default function CityMap({
   snapshot,
   selected,
   onSelect,
+  cameraReset = 0,
+  requestFocus = 0,
+  showSchedule = false,
+  selectedRequest = null,
+  onSelectRequest,
 }: {
   snapshot: Snapshot;
   selected: string;
   onSelect: (id: string) => void;
+  cameraReset?: number;
+  requestFocus?: number;
+  showSchedule?: boolean;
+  selectedRequest?: string | null;
+  onSelectRequest?: (id: string) => void;
 }) {
+  const scheduleLayer = useRef<L.LayerGroup | null>(null);
+  const requestSelectRef = useRef(onSelectRequest);
+  requestSelectRef.current = onSelectRequest;
   const element = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
@@ -53,15 +66,19 @@ export default function CityMap({
     map.current = m;
     L.control.zoom({ position: 'bottomright' }).addTo(m);
 
-    const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 19,
-    }).addTo(m);
+    const tiles = L.tileLayer(
+      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      {
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19,
+      },
+    ).addTo(m);
     tiles.on('tileerror', () => setFailed(true));
     tiles.on('tileload', () => setFailed(false));
 
     layer.current = L.layerGroup().addTo(m);
+    scheduleLayer.current = L.layerGroup().addTo(m);
     const observer = new ResizeObserver(() => m.invalidateSize());
     observer.observe(element.current);
 
@@ -118,7 +135,11 @@ export default function CityMap({
         markers.current.set(vehicle.id, marker);
       }
 
-      const color = vehicle.outOfService ? '#89929e' : vehicle.tripId || vehicle.holdUntil > snapshot.minute ? '#4ed9b8' : '#8bb7f0';
+      const color = vehicle.outOfService
+        ? '#89929e'
+        : vehicle.tripId || vehicle.holdUntil > snapshot.minute
+          ? '#4ed9b8'
+          : '#8bb7f0';
       marker.setStyle({ color, fillColor: color, fillOpacity: 1, weight: 3 });
       marker.setRadius(vehicle.id === selected ? 11 : 8);
 
@@ -127,17 +148,23 @@ export default function CityMap({
       const trip = snapshot.trips.find((t) => t.id === vehicle.tripId);
       let route = routes.current.get(vehicle.id);
       let destination: Position | undefined;
-      if (trip) {
+      if (trip && vehicle.route && vehicle.route.length >= 2) {
         destination = target(trip);
         if (!route) {
-          route = L.polyline([from, destination], { interactive: false, opacity: .85 }).addTo(g);
+          route = L.polyline([from, destination], {
+            interactive: false,
+            opacity: 0.85,
+          }).addTo(g);
           routes.current.set(vehicle.id, route);
         }
         route.setStyle({
           color: trip.status === 'onboard' ? '#63a5ff' : '#55dec1',
           weight: vehicle.id === selected ? 4 : 2,
         });
-        route.setLatLngs([vehicle.position, ...(vehicle.route?.slice((vehicle.routeIndex ?? 0) + 1) ?? [])]);
+        route.setLatLngs([
+          vehicle.position,
+          ...vehicle.route.slice((vehicle.routeIndex ?? 0) + 1),
+        ]);
       } else if (route) {
         route.remove();
         routes.current.delete(vehicle.id);
@@ -145,14 +172,26 @@ export default function CityMap({
       }
 
       marker.bringToFront();
-      movements.push({ from, to: vehicle.position, marker, route, destination, remaining: vehicle.route?.slice((vehicle.routeIndex ?? 0) + 1) ?? [], path: vehicle.movementPath ?? [from, vehicle.position] });
+      movements.push({
+        from,
+        to: vehicle.position,
+        marker,
+        route,
+        remaining: vehicle.route?.slice((vehicle.routeIndex ?? 0) + 1) ?? [],
+        path: vehicle.movementPath ?? [from, vehicle.position],
+      });
     }
 
     // Keep pickup beacons mounted so their pulse continues across live ticks.
-    const pendingCalls = snapshot.trips.filter(t => ['waiting', 'pickup', 'transfer'].includes(t.status));
-    const callIds = new Set(pendingCalls.map(t => t.id));
+    const pendingCalls = snapshot.trips.filter((t) =>
+      ['waiting', 'pickup', 'transfer'].includes(t.status),
+    );
+    const callIds = new Set(pendingCalls.map((t) => t.id));
     for (const [id, marker] of calls.current) {
-      if (!callIds.has(id)) { marker.remove(); calls.current.delete(id); }
+      if (!callIds.has(id)) {
+        marker.remove();
+        calls.current.delete(id);
+      }
     }
     for (const trip of pendingCalls) {
       const location = trip.transferLocation ?? trip.pickup;
@@ -161,32 +200,45 @@ export default function CityMap({
       label.textContent = `${trip.id} · ${trip.transferLocation ? 'Transfer pickup' : trip.from}`;
       if (!marker) {
         marker = L.marker(location, {
-          icon: L.divIcon({ className: 'call-beacon', html: '<span class="call-ring"></span><span class="call-ring call-ring-second"></span><span class="call-dot"></span>', iconSize: [20, 20], iconAnchor: [10, 10] }),
+          icon: L.divIcon({
+            className: 'call-beacon',
+            html: '<span class="call-ring"></span><span class="call-ring call-ring-second"></span><span class="call-dot"></span>',
+            iconSize: [20, 20],
+            iconAnchor: [10, 10],
+          }),
           title: `Pickup call ${trip.id}`,
           zIndexOffset: -100,
-        }).bindTooltip(label).on('click', () => {
-          const unit = snapshotRef.current.vehicles.find(v => v.tripId === trip.id);
-          if (unit) onSelectRef.current(unit.id);
-        }).addTo(g);
+        })
+          .bindTooltip(label)
+          .on('click', () => {
+            const unit = snapshotRef.current.vehicles.find(
+              (v) => v.tripId === trip.id,
+            );
+            if (unit) onSelectRef.current(unit.id);
+          })
+          .addTo(g);
         calls.current.set(trip.id, marker);
-      } else { marker.setLatLng(location); marker.setTooltipContent(label); }
+      } else {
+        marker.setLatLng(location);
+        marker.setTooltipContent(label);
+      }
     }
     const selectedVehicle = snapshot.vehicles.find((v) => v.id === selected);
-    const selectedTrip = snapshot.trips.find((t) => t.id === selectedVehicle?.tripId);
+    const selectedTrip = snapshot.trips.find(
+      (t) => t.id === selectedVehicle?.tripId,
+    );
     if (selectedTrip?.status === 'onboard') {
       const point = target(selectedTrip);
       const tooltip = document.createElement('span');
-      tooltip.textContent = selectedTrip.status === 'onboard'
-        ? selectedTrip.to
-        : selectedTrip.transferLocation
-          ? 'Transfer location'
-          : selectedTrip.from;
+      tooltip.textContent = selectedTrip.to;
       if (!destinationMarker.current) {
         destinationMarker.current = L.circleMarker(point, {
           radius: 8,
           color: '#526dc0',
           fillOpacity: 0.2,
-        }).bindTooltip(tooltip).addTo(g);
+        })
+          .bindTooltip(tooltip)
+          .addTo(g);
       } else {
         destinationMarker.current.setLatLng(point);
         destinationMarker.current.setTooltipContent(tooltip);
@@ -199,8 +251,12 @@ export default function CityMap({
     // Resets and manual disruptions snap to their authoritative positions.
     // During live updates, interpolate linearly without ease-in/ease-out
     // so that movement doesn't stop briefly between successive ticks.
-    const advancing = previousMinute.current !== null && snapshot.minute > previousMinute.current;
-    const animate = advancing && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const advancing =
+      previousMinute.current !== null &&
+      snapshot.minute > previousMinute.current;
+    const animate =
+      advancing &&
+      !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     previousMinute.current = snapshot.minute;
 
     const update = (progress: number) => {
@@ -217,8 +273,10 @@ export default function CityMap({
           for (let i = 0; i < lengths.length; i++) {
             if (left <= lengths[i] && lengths[i] > 0) {
               const t = left / lengths[i];
-              point = [path[i][0] + (path[i+1][0] - path[i][0]) * t,
-                path[i][1] + (path[i+1][1] - path[i][1]) * t];
+              point = [
+                path[i][0] + (path[i + 1][0] - path[i][0]) * t,
+                path[i][1] + (path[i + 1][1] - path[i][1]) * t,
+              ];
               untraveled = path.slice(i + 1);
               break;
             }
@@ -232,7 +290,10 @@ export default function CityMap({
       }
     };
 
-    if (animate && movements.some(({ from, to }) => from[0] !== to[0] || from[1] !== to[1])) {
+    if (
+      animate &&
+      movements.some(({ from, to }) => from[0] !== to[0] || from[1] !== to[1])
+    ) {
       const start = performance.now();
       const glide = (now: number) => {
         const progress = Math.min(1, (now - start) / GLIDE_MS);
@@ -250,6 +311,58 @@ export default function CityMap({
       if (frame.current !== null) cancelAnimationFrame(frame.current);
     };
   }, [snapshot, selected]);
+
+  useEffect(() => {
+    const group = scheduleLayer.current;
+    if (!group) return;
+    group.clearLayers();
+    if (!showSchedule) return;
+    for (const request of scheduleData.transport_requests) {
+      const label = document.createElement('span');
+      label.textContent = `${request.patient_id} · ${request.pickup_location} · Static schedule`;
+      L.circleMarker([request.pickup_lat, request.pickup_lng], {
+        radius: request.request_id === selectedRequest ? 9 : 5,
+        color: '#d4a8ff',
+        fillColor: '#d4a8ff',
+        fillOpacity: request.status === 'completed' ? 0.2 : 0.55,
+        weight: 2,
+      })
+        .bindTooltip(label)
+        .on('click', () => requestSelectRef.current?.(request.request_id))
+        .addTo(group);
+    }
+    const request = scheduleData.transport_requests.find(
+      (t) => t.request_id === selectedRequest,
+    );
+    if (request) {
+      const label = document.createElement('span');
+      label.textContent = `Destination: ${request.dropoff_location} · Static schedule`;
+      L.circleMarker([request.dropoff_lat, request.dropoff_lng], {
+        radius: 11,
+        color: '#75b7ff',
+        fillOpacity: 0.15,
+        weight: 3,
+      })
+        .bindTooltip(label, { permanent: true })
+        .addTo(group);
+    }
+  }, [showSchedule, selectedRequest]);
+  useEffect(() => {
+    const request = scheduleData.transport_requests.find(
+      (t) => t.request_id === selectedRequest,
+    );
+    if (showSchedule && request)
+      map.current?.fitBounds(
+        [
+          [request.pickup_lat, request.pickup_lng],
+          [request.dropoff_lat, request.dropoff_lng],
+        ],
+        { padding: [65, 65], maxZoom: 14 },
+      );
+  }, [selectedRequest, showSchedule, requestFocus]);
+  useEffect(() => {
+    map.current?.setView([42.731, -73.675], 13);
+  }, [cameraReset]);
 
   // A user selection may recenter once. Live position changes do not pan the map.
   useEffect(() => {
@@ -274,7 +387,16 @@ export default function CityMap({
       >
         ⌖ Recenter
       </button>
-      {failed && <p className="map-error">Map tiles unavailable. Check your connection.</p>}
+      {showSchedule && (
+        <div className="static-map-label">
+          Purple dots: static schedule pickups · Blue ring: selected destination
+        </div>
+      )}
+      {failed && (
+        <p className="map-error">
+          Map tiles unavailable. Check your connection.
+        </p>
+      )}
     </div>
   );
 }

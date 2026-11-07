@@ -1,0 +1,5 @@
+node_modules/
+dist/
+package-lock.json
+frontend/src/data/
+frontend/src/mocks/roadRoutes.json

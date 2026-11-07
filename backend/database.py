@@ -4,8 +4,8 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 # Your Tiger Data connection string
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
-    "postgresql+psycopg://tsdbadmin:p4d86pi5ijnurb04@axlri9m9b8.obi5rjrxue.tsdb.cloud.timescale.com:33323/tsdb"
+    "DATABASE_URL",
+    "postgresql+psycopg://tsdbadmin:p4d86pi5ijnurb04@axlri9m9b8.obi5rjrxue.tsdb.cloud.timescale.com:33323/tsdb",
 )
 
 # Fix prefix if necessary
@@ -16,13 +16,12 @@ elif DATABASE_URL.startswith("postgresql://") and "+psycopg" not in DATABASE_URL
 
 # Add connect_timeout so it fails in 5 seconds instead of hanging forever
 engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    connect_args={"connect_timeout": 5}
+    DATABASE_URL, pool_pre_ping=True, connect_args={"connect_timeout": 5}
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
 
 def get_db():
     db = SessionLocal()
@@ -30,4 +29,3 @@ def get_db():
         yield db
     finally:
         db.close()
-

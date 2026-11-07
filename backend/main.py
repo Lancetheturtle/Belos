@@ -5,7 +5,6 @@ from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy import text
 
-
 # Use relative imports with dots (.) for files inside the same backend folder
 from .database import engine, get_db, Base
 from .models import VehicleRow, TripRow, VehiclePositionRow
@@ -25,16 +24,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 class ActionPayload(BaseModel):
     action: Optional[str] = "tick"
     minutes: Optional[int] = 1
     trip_id: Optional[str] = None
     vehicle_id: Optional[str] = None
 
+
 @app.post("/transport/reset")
 def transport_reset(db: Session = Depends(get_db)):
     """Resets the simulation to the initial scenario state."""
     return create_initial_scenario(db)
+
 
 @app.post("/transport/action")
 def transport_action(payload: ActionPayload, db: Session = Depends(get_db)):
@@ -44,14 +46,16 @@ def transport_action(payload: ActionPayload, db: Session = Depends(get_db)):
         if payload.minutes and payload.minutes > 0:
             # Fetch current shift state or create a default session tracker
             advance_shift(db, payload.minutes)
-            
+
         return get_current_snapshot(db)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
 
 @app.get("/health/db")
 def test_db_connection(db: Session = Depends(get_db)):
@@ -61,14 +65,16 @@ def test_db_connection(db: Session = Depends(get_db)):
         return {
             "status": "success",
             "message": "Successfully connected to Tiger Data!",
-            "test_query_result": result
+            "test_query_result": result,
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500,
-            detail=f"Database connection failed: {str(e)}"
+            status_code=500, detail=f"Database connection failed: {str(e)}"
         )
+
+
 app = FastAPI()
+
 
 @app.on_event("startup")
 def startup_event():

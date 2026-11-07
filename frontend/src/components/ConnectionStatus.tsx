@@ -1,10 +1,32 @@
-import { isDemo } from '../api/client';
-
-export default function ConnectionStatus() {
+import { useSyncExternalStore } from 'react';
+import { getConnection, subscribeConnection } from '../api/client';
+export default function ConnectionStatus({
+  onRetry,
+  busy = false,
+}: {
+  onRetry?: () => void;
+  busy?: boolean;
+}) {
+  const status = useSyncExternalStore(subscribeConnection, getConnection);
+  const labels = {
+    demo: 'Demo · Local data',
+    connecting: 'Connecting…',
+    connected: 'Server connected',
+    disconnected: 'Disconnected',
+  };
   return (
-          <span className="demo-label">
-            <span className="dot" />
-            {isDemo ? 'Demo shift' : 'Backend mode'}
-          </span>
+    <span
+      className={`connection-status ${status.state}`}
+      role="status"
+      title={status.error}
+    >
+      <span className="dot" />
+      {labels[status.state]}
+      {status.state === 'disconnected' && onRetry && (
+        <button disabled={busy} onClick={onRetry}>
+          Retry
+        </button>
+      )}
+    </span>
   );
 }
