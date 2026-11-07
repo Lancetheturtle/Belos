@@ -232,18 +232,20 @@ def add_event(
         )
     )
 
+from datetime import datetime, timezone, timedelta
 
 def save_position(db, vehicle: VehicleRow, minute: int):
+    # Add a unique offset per simulation minute to prevent primary key collisions
+    unique_timestamp = datetime.now(timezone.utc) + timedelta(seconds=minute, microseconds=minute * 150)
     db.add(
         VehiclePositionRow(
             vehicle_id=vehicle.id,
-            recorded_at=datetime.now(timezone.utc),
+            recorded_at=unique_timestamp,
             minute=minute,
             lat=vehicle.lat,
             lng=vehicle.lng,
         )
     )
-
 
 def reset_demo_data(db):
     """Reset the single shared demo shift to its initial synthetic data."""
