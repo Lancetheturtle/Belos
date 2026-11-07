@@ -1,23 +1,24 @@
-# Frontend API handoff (proposed)
+# Proposed medical transport API
 
-This is the frontend's implemented expectation, not an existing backend capability. Review together before integrating. Canonical TypeScript shapes: `frontend/src/types/index.ts`.
+Replaces the earlier scenario/dispatch incident contract. Coordinate with the backend developer before enabling API mode.
 
-Every endpoint below returns a complete Snapshot: scenario, elapsedSeconds, vehicles, incidents, comparison (null before dispatch), and events (newest first). Positions and route points are `[latitude, longitude]`, not GeoJSON coordinate order. Times use seconds except metrics.meanEtaMinutes; distances use kilometers and emissions kilograms.
+- POST /transport/reset with {} returns the initial shift Snapshot.
+- POST /transport/action accepts an Action and returns the complete updated Snapshot.
 
-| Request | Body / behavior |
-| --- | --- |
-| GET /scenario?name=routine or surge | Load/reset server-side scenario; return initial Snapshot. |
-| POST /dispatch | `{ "policy": "nearest", "conditions": { "traffic": "normal", "weather": "clear" } }`; apply assignments; return Snapshot including comparison for both policies against the same pre-dispatch state. |
-| POST /simulate | `{ "action": "advance", "seconds": 10 }`; advance backend simulation clock and return Snapshot. |
-| POST /simulate | `{ "action": "incident", "priority": "urgent" }`; add a synthetic incident at a preset location; return Snapshot. |
+Canonical types: frontend/src/types/index.ts. Snapshot: minute (minutes since 09:00), traffic (boolean), vehicles, trips, events (newest first). Positions are [latitude, longitude]. Scheduled times, holds, and actual timestamps are minutes relative to 09:00.
 
-Policy: nearest or optimized. Traffic: normal or heavy. Weather: clear or rain.
-Vehicle status: available, enroute, unavailable. Incident status: waiting, assigned, resolved. Priority: critical, urgent, standard.
+Actions:
 
-Snapshot comparison has nearest and optimized Metrics objects: meanEtaMinutes, distanceKm, co2Kg, assigned, unserved. The dashboard labels these as the most recent dispatch comparison.
+```json
+{"type":"advance","minutes":5}
+{"type":"traffic","enabled":true}
+{"type":"delay","vehicleId":"AMB-01"}
+{"type":"emergency","vehicleId":"AMB-01"}
+{"type":"outage","vehicleId":"AMB-01"}
+{"type":"restore","vehicleId":"AMB-01"}
+{"type":"assign","tripId":"TR-101","vehicleId":"AMB-04"}
+```
 
-The client currently expects one active scenario per API session. Agree on session/scenario IDs before supporting multiple users. GET /scenario resetting state is a prototype convention; revise this client and document together if using a POST reset endpoint instead.
+Crew delay adds 10 minutes, emergency interruption adds 15; holds stack. Outages stop movement and unlink the assignment. Before pickup, the trip returns to waiting; onboard, preserve the patient's position in transferLocation and set transfer status. An explicit available-unit assignment is required. Restore never silently reclaims a reassigned trip. Preserve actualPickup across a transfer. Completion releases the unit.
 
-The API base URL is frontend/.env.local VITE_API_BASE_URL. Set VITE_DATA_MODE=api and restart Vite. Allow the frontend origin with backend CORS. Non-2xx responses and network errors appear in the UI and pause playback. No demo fallback occurs in API mode.
-
-Forecast, independent benchmark runs, and LLM explanation panels are not connected yet.
+Frontend currently derives demo ETA from distance, holdUntil, and global traffic. Replace these display helpers with authoritative backend ETA fields when integrating road routing. Backend owns state; UI requests advances and renders returned snapshots. Add session IDs for multi-user support and configure CORS for the frontend origin. Do not implement these demo assumptions as live transport protocols.

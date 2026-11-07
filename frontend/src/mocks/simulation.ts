@@ -1,81 +1,82 @@
-import type { Conditions, Incident, Metrics, Policy, Position, Snapshot, Vehicle } from '../types';
-
-const bases: Position[] = [[42.731,-73.687],[42.744,-73.682],[42.718,-73.686],[42.731,-73.665],[42.749,-73.668],[42.712,-73.674],[42.739,-73.656],[42.724,-73.65]];
-const locations: Position[] = [[42.728,-73.691],[42.735,-73.675],[42.746,-73.677],[42.717,-73.669],[42.738,-73.658],[42.725,-73.662],[42.752,-73.683],[42.711,-73.682],[42.742,-73.667],[42.722,-73.677],[42.734,-73.649],[42.747,-73.656]];
-const names = ['Downtown Troy','College Hill','North Central','South Troy','Eastside','Prospect Park','Lansingburgh','Riverfront','Samaritan area','Little Italy','Upper Eastside','Frear Park'];
-export function createScenario(scenario: Snapshot['scenario'] = 'routine'): Snapshot {
-  return { scenario, elapsedSeconds: 0, comparison: null, events: [scenario === 'routine' ? 'Routine scenario loaded · 8 units, 4 incidents' : 'Surge scenario loaded · 6 units available, 12 incidents'],
-    vehicles: bases.map((position, i) => ({ id: `EMS-${String(i + 1).padStart(2, '0')}`, position: [...position], status: scenario === 'surge' && i > 5 ? 'unavailable' : 'available' })),
-    incidents: locations.slice(0, scenario === 'surge' ? 12 : 4).map((location,i) => ({ id: `INC-${String(i+1).padStart(3,'0')}`, name: names[i], location: [...location], priority: i % 3 === 0 ? 'critical' : i % 3 === 1 ? 'urgent' : 'standard', status:'waiting' })) };
+import type { Action, Position, Snapshot, Trip, Vehicle } from '../types';
+export function distance(a:Position,b:Position):number {
+  const r=Math.PI/180,dLat=(b[0]-a[0])*r,dLng=(b[1]-a[1])*r;
+  const h=Math.sin(dLat/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dLng/2)**2;
+  return 6371*2*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));
 }
-export function distance(a: Position, b: Position): number {
-  const rad = Math.PI / 180;
-  const dLat = (b[0]-a[0])*rad, dLng = (b[1]-a[1])*rad;
-  const h = Math.sin(dLat/2)**2 + Math.cos(a[0]*rad)*Math.cos(b[0]*rad)*Math.sin(dLng/2)**2;
-  return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1-h));
+export const clock=(minute:number)=>{const n=9*60+Math.ceil(minute-1e-7);return `${String(Math.floor(n/60)%24).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;};
+export const free=(v:Vehicle,s:Snapshot)=>!v.outOfService&&!v.tripId&&v.holdUntil<=s.minute;
+export function target(t:Trip):Position { return t.status==='onboard'?t.destination:t.transferLocation??t.pickup; }
+export function eta(s:Snapshot,t:Trip):number|null {
+  if(t.status==='complete')return t.completedAt??s.minute;
+  const v=s.vehicles.find(v=>v.id===t.vehicleId);if(!v||v.outOfService)return null;
+  return Math.max(s.minute,v.holdUntil)+distance(v.position,target(t))/(s.traffic?.25:.5);
 }
-type Pair = { vehicle: Vehicle; incident: Incident; km: number; minutes: number };
-function assignments(state: Snapshot, policy: Policy, conditions: Conditions): Pair[] {
-  const vehicles = state.vehicles.filter(v => v.status === 'available');
-  const incidents = state.incidents.filter(i => i.status === 'waiting');
-  const factor = (conditions.traffic === 'heavy' ? 1.65 : 1) * (conditions.weather === 'rain' ? 1.2 : 1);
-  const pair = (i: number, v: number): Pair => { const km = distance(vehicles[v].position, incidents[i].location); return {vehicle: vehicles[v], incident: incidents[i], km, minutes: km / 32 * 60 * factor + .5}; };
-  if (policy === 'nearest') {
-    const used = new Set<number>();
-    return incidents.flatMap((_, i) => {
-      const available = vehicles.map((_,v) => v).filter(v => !used.has(v)).sort((a,b) => pair(i,a).minutes - pair(i,b).minutes);
-      if (!available.length) return [];
-      used.add(available[0]); return [pair(i,available[0])];
-    });
-  }
-  // Small demo-only exact assignment via vehicle bitmask DP. No road or clinical model.
-  const memo = new Map<string,{cost:number;pairs:Pair[]}>();
-  function solve(i:number, mask:number): {cost:number;pairs:Pair[]} {
-    if (i === incidents.length) return {cost:0,pairs:[]};
-    const key = `${i}:${mask}`; if (memo.has(key)) return memo.get(key)!;
-    const skip = solve(i+1,mask); let best = {cost:skip.cost+10000,pairs:skip.pairs};
-    for (let v=0;v<vehicles.length;v++) if (!(mask & (1<<v))) {
-      const p = pair(i,v), tail = solve(i+1,mask|(1<<v));
-      if (p.minutes+tail.cost < best.cost) best={cost:p.minutes+tail.cost,pairs:[p,...tail.pairs]};
+export function late(s:Snapshot,t:Trip):number {
+  if(t.actualPickup!==undefined)return Math.max(0,Math.ceil(t.actualPickup-t.scheduled-1e-7));
+  return Math.max(0,Math.ceil((eta(s,t)??s.minute)-t.scheduled-1e-7));
+}
+function event(s:Snapshot,message:string){s.events=[`${clock(s.minute)} · ${message}`,...s.events].slice(0,8);}
+export function createScenario():Snapshot {
+  return {minute:0,traffic:false,events:['09:00 · Transport shift started. Three pickups assigned.'],vehicles:[
+    {id:'AMB-01',crew:'Crew A',position:[42.720,-73.687],outOfService:false,holdUntil:0,holdReason:'',tripId:'TR-101'},
+    {id:'AMB-02',crew:'Crew B',position:[42.743,-73.677],outOfService:false,holdUntil:0,holdReason:'',tripId:'TR-102'},
+    {id:'AMB-03',crew:'Crew C',position:[42.727,-73.660],outOfService:false,holdUntil:0,holdReason:'',tripId:'TR-103'},
+    {id:'AMB-04',crew:'Crew D',position:[42.736,-73.681],outOfService:false,holdUntil:0,holdReason:''}],trips:[
+    {id:'TR-101',from:'Riverside care home',to:'Troy medical center',pickup:[42.731,-73.688],destination:[42.743,-73.671],scheduled:5,status:'pickup',vehicleId:'AMB-01'},
+    {id:'TR-102',from:'Northside residence',to:'Dialysis clinic',pickup:[42.750,-73.679],destination:[42.725,-73.680],scheduled:10,status:'pickup',vehicleId:'AMB-02'},
+    {id:'TR-103',from:'Eastside rehab',to:'Outpatient clinic',pickup:[42.730,-73.654],destination:[42.720,-73.675],scheduled:10,status:'pickup',vehicleId:'AMB-03'},
+    {id:'TR-104',from:'Troy medical center',to:'Riverside care home',pickup:[42.743,-73.671],destination:[42.731,-73.688],scheduled:15,status:'waiting'},
+    {id:'TR-105',from:'South Troy residence',to:'Dialysis clinic',pickup:[42.710,-73.680],destination:[42.725,-73.680],scheduled:20,status:'waiting'},
+    {id:'TR-106',from:'Outpatient clinic',to:'Eastside rehab',pickup:[42.720,-73.675],destination:[42.730,-73.654],scheduled:25,status:'waiting'}]};
+}
+export function applyAction(state:Snapshot,action:Action):Snapshot {
+  const s=structuredClone(state);
+  if(action.type==='traffic'){s.traffic=action.enabled;event(s,action.enabled?'Road slowdown active. Travel speed reduced by half.':'Road slowdown cleared.');return s;}
+  if(action.type==='advance'){
+    if(!Number.isFinite(action.minutes)||action.minutes<=0||action.minutes>60)throw new Error('Advance must be between 0 and 60 minutes.');
+    // Step at one-second resolution so travel, holds, and pickup times remain consistent.
+    const end=s.minute+action.minutes;
+    while(s.minute<end-1e-8){
+      const dt=Math.min(1/60,end-s.minute); s.minute+=dt;
+      for(const v of s.vehicles){
+        if(v.outOfService||v.holdUntil>s.minute||!v.tripId)continue;
+        const t=s.trips.find(t=>t.id===v.tripId)!; const dest=target(t), km=distance(v.position,dest);
+        const fraction=km>0?Math.min(1,(s.traffic?.25:.5)*dt/km):1;
+        v.position=[v.position[0]+(dest[0]-v.position[0])*fraction,v.position[1]+(dest[1]-v.position[1])*fraction];
+        if(fraction===1){
+          if(t.status==='pickup'){
+            if(s.minute+1e-8<t.scheduled)continue; // Wait for scheduled pickup.
+            if(t.actualPickup===undefined)t.actualPickup=s.minute;
+            t.status='onboard';delete t.transferLocation;event(s,`${v.id} picked up ${t.id}. Heading to ${t.to}.`);
+          }else if(t.status==='onboard'){
+            t.status='complete';t.completedAt=s.minute;delete v.tripId;event(s,`${t.id} delivered to ${t.to}. ${v.id} is available.`);
+          }
+        }
+      }
     }
-    memo.set(key,best); return best;
+    s.minute=Math.round(end*1000)/1000;return s;
   }
-  return solve(0,0).pairs;
-}
-function metrics(state:Snapshot,pairs:Pair[]):Metrics {
-  const km = pairs.reduce((sum,p)=>sum+p.km,0);
-  return {meanEtaMinutes:pairs.length ? pairs.reduce((sum,p)=>sum+p.minutes,0)/pairs.length : 0, distanceKm:km, co2Kg:km*.35, assigned:pairs.length, unserved:state.incidents.filter(i=>i.status==='waiting').length-pairs.length};
-}
-export function dispatch(state:Snapshot, policy:Policy, conditions:Conditions):Snapshot {
-  const baseline=assignments(state,'nearest',conditions), optimized=assignments(state,'optimized',conditions);
-  const pairs=policy==='nearest'?baseline:optimized;
-  const next=structuredClone(state);
-  next.comparison={nearest:metrics(state,baseline),optimized:metrics(state,optimized)};
-  for (const p of pairs) {
-    const vehicle=next.vehicles.find(v=>v.id===p.vehicle.id)!;
-    vehicle.status='enroute'; vehicle.incidentId=p.incident.id; vehicle.route=[[...vehicle.position],[...p.incident.location]]; vehicle.progress=0; vehicle.durationSeconds=p.minutes*60;
-    next.incidents.find(i=>i.id===p.incident.id)!.status='assigned';
+  const v=s.vehicles.find(v=>v.id===action.vehicleId);if(!v)throw new Error('Vehicle not found.');
+  if(action.type==='assign'){
+    const t=s.trips.find(t=>t.id===action.tripId);if(!t||!['waiting','transfer'].includes(t.status))throw new Error('This transport cannot be assigned.');
+    if(!free(v,s))throw new Error('Choose an available ambulance.');
+    t.status='pickup';t.vehicleId=v.id;v.tripId=t.id;event(s,`${t.id} assigned to ${v.id}${t.transferLocation?' for a simulated transfer':''}.`);return s;
   }
-  next.events=[`${policy==='nearest'?'Nearest available':'Fleet optimizer'} assigned ${pairs.length} unit${pairs.length===1?'':'s'}`, ...next.events].slice(0,8);
-  return next;
-}
-export function advance(state:Snapshot,seconds:number):Snapshot {
-  const next=structuredClone(state); next.elapsedSeconds+=seconds;
-  for (const v of next.vehicles) if(v.status==='enroute' && v.route && v.durationSeconds) {
-    v.progress=Math.min(1,(v.progress??0)+seconds/v.durationSeconds);
-    const a=v.route[0], b=v.route[v.route.length-1];
-    v.position=[a[0]+(b[0]-a[0])*v.progress,a[1]+(b[1]-a[1])*v.progress];
-    if(v.progress===1) {
-      const incident=next.incidents.find(i=>i.id===v.incidentId); if(incident) incident.status='resolved';
-      next.events=[`${v.id} reached ${v.incidentId} · demo incident resolved`,...next.events].slice(0,8);
-      v.status='available'; delete v.incidentId; delete v.route; delete v.progress; delete v.durationSeconds;
+  if(action.type==='outage'){
+    if(v.outOfService)return s;
+    const t=s.trips.find(t=>t.id===v.tripId);
+    if(t){
+      const onboard=t.status==='onboard';t.status=onboard||t.transferLocation?'transfer':'waiting';
+      if(onboard)t.transferLocation=[...v.position];delete t.vehicleId;
+      event(s,`${t.id} ${t.status==='transfer'?'needs a transfer at the stopped vehicle':'needs reassignment'}.`);
     }
+    delete v.tripId;v.outOfService=true;v.holdUntil=s.minute;v.holdReason='';event(s,`${v.id} is out of service.`);return s;
   }
-  return next;
-}
-export function addIncident(state:Snapshot,priority:Incident['priority']):Snapshot {
-  const next=structuredClone(state), n=next.incidents.length, index=n%locations.length;
-  next.incidents.push({id:`INC-${String(n+1).padStart(3,'0')}`,name:names[index],location:[locations[index][0]+.0003*Math.floor(n/locations.length),locations[index][1]],priority,status:'waiting'});
-  next.events=[`New ${priority} incident added · ${names[index]}`,...next.events].slice(0,8);
-  next.comparison=null; return next;
+  if(action.type==='restore'){v.outOfService=false;event(s,`${v.id} returned to service. Assign a transport when ready.`);return s;}
+  if(v.outOfService)throw new Error('Return this ambulance to service first.');
+  const minutes=action.type==='delay'?10:15;
+  v.holdUntil=Math.max(s.minute,v.holdUntil)+minutes;
+  v.holdReason=action.type==='delay'?'Crew delay':'Emergency hold';
+  event(s,`${v.id}: ${v.holdReason.toLowerCase()}, +${minutes} minutes.`);return s;
 }

@@ -1,11 +1,7 @@
-# Analytics
+# Transport analytics
 
-Owner: teammate 3
+Owner: teammate 3. Python modules are still placeholders.
 
-- `forecast.py`: synthetic-data demand forecasting.
-- `emissions.py`: distance-based environmental estimates.
-- `benchmarks.py`: comparison and reporting for identical scenario inputs.
+Focus on pickup lateness, delays caused by crew holds and traffic, trips affected by vehicle outages, and time until reassignment. Integrate and deploy the transport app before adding forecasting or environmental estimates. Existing forecast.py and emissions.py placeholders are optional future work; the simplified frontend does not use them.
 
-These modules are placeholders. Coordinate API exposure with the backend owner.
-Keep generated datasets and results in `data/generated/`.
-Also own deployment setup and document deployment steps once selected.
+Use synthetic schedules and reproducible disruption scenarios. Coordinate backend metrics with the transport contract in ../contracts/frontend-api.md.
