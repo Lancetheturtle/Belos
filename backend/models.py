@@ -35,3 +35,4 @@ class VehiclePositionRow(Base):
     __table_args__ = (
         PrimaryKeyConstraint('vehicle_id', 'recorded_at', name='pk_vehicle_positions'),
     )
+
