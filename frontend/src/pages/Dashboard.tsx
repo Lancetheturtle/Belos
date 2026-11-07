@@ -1,41 +1,462 @@
-import {useEffect,useRef,useState} from 'react';
-import {Ambulance,ArrowRight,Clock3,MapPin,RotateCcw,TriangleAlert,Plus,Check,Activity} from 'lucide-react';
-import {client,isDemo} from '../api/client';
-import {clock,eta,free,late} from '../mocks/simulation';
-import type {Action,Snapshot,Trip} from '../types';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Ambulance,
+  ArrowRight,
+  Clock3,
+  MapPin,
+  RotateCcw,
+  TriangleAlert,
+  Plus,
+  Check,
+  Activity,
+} from 'lucide-react';
+import { client, isDemo } from '../api/client';
+import { clock, eta, free, late } from '../mocks/simulation';
+import type { Action, Snapshot, Trip } from '../types';
 import CityMap from '../components/CityMap';
-const statusLabel=(t:Trip)=>({waiting:'Needs ambulance',pickup:t.transferLocation?'Heading to transfer':'Heading to pickup',onboard:'Patient on board',transfer:'Needs transfer',complete:'Completed'}[t.status]);
-export default function Dashboard(){
- const [s,setS]=useState<Snapshot|null>(null),[selected,setSelected]=useState('AMB-01'),[busy,setBusy]=useState(false),[error,setError]=useState('');const lock=useRef(false);
- async function run(op:()=>Promise<Snapshot>){if(lock.current)return;lock.current=true;setBusy(true);setError('');try{setS(await op());}catch(e){setError(e instanceof Error?e.message:'Something went wrong.');}finally{lock.current=false;setBusy(false);}}
- useEffect(()=>{void run(()=>client.load());},[]);
- if(!s)return <main className="loading"><Ambulance size={32}/><h1>Belos transport</h1><p>{error||'Loading the transport schedule…'}</p>{error&&<button onClick={()=>void run(()=>client.load())}>Retry</button>}</main>;
- const act=(a:Action)=>void run(()=>client.act(s,a));const v=s.vehicles.find(v=>v.id===selected)!;
- const available=s.vehicles.filter(v=>free(v,s));const pending=s.trips.filter(t=>['waiting','transfer'].includes(t.status));
- const delayed=s.trips.filter(t=>t.status!=='complete'&&(late(s,t)>0||t.status==='transfer'||s.vehicles.some(unit=>unit.id===t.vehicleId&&unit.holdUntil>s.minute)));
- const vehicleTrip=s.trips.find(t=>t.id===v.tripId);const held=v.holdUntil>s.minute;
- return <div className="app"><header><a className="brand" href="#"><span><Ambulance size={23}/></span>belos<span className="brand-sub">TRANSPORT OPERATIONS</span></a><div className="header-right"><span className="demo-label"><span className="dot"/>{isDemo?'Demo shift':'Backend mode'}</span><span className="header-clock"><Clock3 size={15}/>{clock(s.minute)}</span><button className="quiet" disabled={busy} onClick={()=>{setSelected('AMB-01');void run(()=>client.load());}}><RotateCcw size={14}/><span>Reset demo</span></button></div></header>
- <main className="map-workspace">
- <section className="map-stage" aria-label="Transport map workspace"><CityMap snapshot={s} selected={selected} onSelect={setSelected}/>
- <div className="map-heading"><div className="eyebrow">TROY, NEW YORK</div><h1>Your fleet. One clear view.</h1><p>Medical transport coordination</p></div>
- <section className="map-stats" aria-label="Shift summary"><div><span className="dot"/><strong>{available.length}</strong><span>available</span></div><div><span className="dot orange"/><strong>{delayed.length}</strong><span>need attention</span></div><div><span className="dot gray"/><strong>{s.vehicles.filter(v=>v.outOfService).length}</strong><span>out of service</span></div></section>
- <div className="map-bottom"><div className="map-legend"><span><i className="dot"/>Active unit</span><span><i className="dot orange"/>Delayed</span><span><i className="dot gray"/>Out of service</span></div><span className="map-note">Synthetic data · Illustrative direct routes</span></div>
- </section>
- <aside className="sidebar" aria-label="Transport controls"><div className="sidebar-title"><div><div className="eyebrow">SHIFT WORKSPACE</div><h2>Transport desk</h2></div><span className="pill neutral">{s.trips.length} trips</span></div>
- {error&&<div className="error" role="alert">{error}</div>}
- <div className="shift-controls"><label className="traffic"><input type="checkbox" checked={s.traffic} disabled={busy} onChange={e=>act({type:'traffic',enabled:e.target.checked})}/> Road slowdown</label><button className="primary" disabled={busy} onClick={()=>act({type:'advance',minutes:5})}><Plus size={14}/>Advance 5 min</button></div>
- <div className="sidebar-sections">
- <details className="drawer controls" open><summary><span><Ambulance size={17}/>Selected ambulance</span><span className="summary-meta">{selected}</span></summary><div className="control-content"><label htmlFor="unit">Ambulance</label><select id="unit" value={selected} onChange={e=>setSelected(e.target.value)}>{s.vehicles.map(unit=><option key={unit.id} value={unit.id}>{unit.id} · {unit.crew}</option>)}</select><div className="unit-state"><span className={`dot ${v.outOfService?'gray':held?'orange':''}`}/>{v.outOfService?'Out of service':held?`${v.holdReason} until ${clock(v.holdUntil)}`:vehicleTrip?statusLabel(vehicleTrip):'Available for transport'}</div>{vehicleTrip&&<p className="current-trip">{vehicleTrip.id} · {vehicleTrip.status==='onboard'?vehicleTrip.to:vehicleTrip.from}</p>}
- <button className="action" disabled={busy||v.outOfService} onClick={()=>act({type:'delay',vehicleId:v.id})}><Clock3 size={18}/><span><strong>Crew running late</strong><small>Hold this unit for 10 more minutes</small></span><Plus size={15}/></button>
- <button className="action" disabled={busy||v.outOfService} onClick={()=>act({type:'emergency',vehicleId:v.id})}><TriangleAlert size={18}/><span><strong>Emergency interruption</strong><small>Pause this transport for 15 minutes</small></span><Plus size={15}/></button>
- <button className={`action ${v.outOfService?'restore':'outage'}`} disabled={busy} onClick={()=>act({type:v.outOfService?'restore':'outage',vehicleId:v.id})}>{v.outOfService?<Check size={18}/>:<Ambulance size={18}/>}<span><strong>{v.outOfService?'Return to service':'Ambulance out of order'}</strong><small>{v.outOfService?'Make this unit available again':'Release its trip for reassignment'}</small></span></button>
- <p className="help">An interruption holds the selected unit. A breakdown stops it and flags its transport for a replacement.</p></div></details>
- <details className="drawer schedule"><summary><span><Clock3 size={17}/>Transport schedule</span><span className="summary-meta">{pending.length} unassigned</span></summary><div className="trip-list">{s.trips.map(t=>{const arrival=eta(s,t),delay=late(s,t),assignedUnit=s.vehicles.find(unit=>unit.id===t.vehicleId);return <article className={`trip ${t.status==='transfer'?'needs-transfer':''}`} key={t.id}>
- <div className="trip-time"><strong>{clock(t.scheduled)}</strong><span>pickup</span></div><div className="trip-body"><div className="trip-route"><strong>{t.from}</strong><ArrowRight size={13}/><strong>{t.to}</strong></div><div className="trip-meta"><span>{t.id}</span><span className={`pill ${t.status==='complete'?'green':t.status==='transfer'?'red':t.status==='waiting'?'amber':'neutral'}`}>{statusLabel(t)}</span>{assignedUnit&&assignedUnit.holdUntil>s.minute&&<span className="delay">{assignedUnit.holdReason} until {clock(assignedUnit.holdUntil)}</span>}{delay>0&&<span className="delay">{delay} min {t.actualPickup!==undefined?'late pickup':'pickup delay'}</span>}</div>
- <div className="trip-bottom">{['waiting','transfer'].includes(t.status)?<label className="assign-label">{t.status==='transfer'?'Send replacement':'Assign ambulance'}<select aria-label={`Assign ${t.id}`} value="" disabled={busy||available.length===0} onChange={e=>act({type:'assign',tripId:t.id,vehicleId:e.target.value})}><option value="">{available.length?'Choose unit…':'No units available'}</option>{available.map(unit=><option key={unit.id} value={unit.id}>{unit.id} · {unit.crew}</option>)}</select></label>:<span>{t.vehicleId} <span className="separator">·</span> {t.status==='complete'?`Delivered ${clock(t.completedAt!)}`:`${t.status==='onboard'?'Drop-off':t.transferLocation?'Transfer':'Pickup'} ETA ${arrival===null?'—':clock(t.status==='pickup'?Math.max(arrival,t.scheduled):arrival)}`}</span>}{t.status==='transfer'&&<span className="transfer-note">Patient remains at stopped vehicle.</span>}</div></div></article>;})}</div><div className="schedule-note"><MapPin size={14}/>Fictional facilities around Troy. ETAs update when you add delays or change traffic.</div></details>
- <details className="drawer fleet"><summary><span><Activity size={17}/>Fleet status</span><span className="summary-meta">{s.vehicles.length} units</span></summary>{s.vehicles.map(unit=><button key={unit.id} className={`fleet-row ${selected===unit.id?'selected':''}`} onClick={()=>setSelected(unit.id)}><span className={`dot ${unit.outOfService?'gray':unit.holdUntil>s.minute?'orange':''}`}/><strong>{unit.id}</strong><span>{unit.outOfService?'Out of service':unit.holdUntil>s.minute?'Delayed':unit.tripId?'On a trip':'Available'}</span></button>)}</details>
- <details className="drawer log"><summary><span><MapPin size={17}/>Shift updates</span><span className="summary-meta">{s.events.length}</span></summary><div aria-live="polite">{s.events.slice(0,6).map((e,i)=><p key={`${i}-${e}`}><span className="dot"/>{e}</p>)}</div></details>
- <details className="drawer about"><summary><span>About this demo</span></summary><p>Scheduled medical pickups and facility transfers. Direct-line travel at 30 km/h; road slowdown halves speed. Transfers are simulated. Use Advance 5 min to move the shift forward.</p></details>
- </div><div className="sidebar-footer"><span className="dot"/>Transport simulation · No patient data</div>
- </aside></main></div>;
+const statusLabel = (t: Trip) =>
+  ({
+    waiting: 'Needs ambulance',
+    pickup: t.transferLocation ? 'Heading to transfer' : 'Heading to pickup',
+    onboard: 'Patient on board',
+    transfer: 'Needs transfer',
+    complete: 'Completed',
+  })[t.status];
+export default function Dashboard() {
+  const [s, setS] = useState<Snapshot | null>(null),
+    [selected, setSelected] = useState('AMB-01'),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState('');
+  const lock = useRef(false);
+  async function run(op: () => Promise<Snapshot>) {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      setS(await op());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Something went wrong.');
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+  useEffect(() => {
+    void run(() => client.load());
+  }, []);
+  if (!s)
+    return (
+      <main className="loading">
+        <Ambulance size={32} />
+        <h1>Belos transport</h1>
+        <p>{error || 'Loading the transport schedule…'}</p>
+        {error && (
+          <button onClick={() => void run(() => client.load())}>Retry</button>
+        )}
+      </main>
+    );
+  const act = (a: Action) => void run(() => client.act(s, a));
+  const v = s.vehicles.find((v) => v.id === selected)!;
+  const available = s.vehicles.filter((v) => free(v, s));
+  const pending = s.trips.filter((t) =>
+    ['waiting', 'transfer'].includes(t.status),
+  );
+  const delayed = s.trips.filter(
+    (t) =>
+      t.status !== 'complete' &&
+      (late(s, t) > 0 ||
+        t.status === 'transfer' ||
+        s.vehicles.some(
+          (unit) => unit.id === t.vehicleId && unit.holdUntil > s.minute,
+        )),
+  );
+  const vehicleTrip = s.trips.find((t) => t.id === v.tripId);
+  const held = v.holdUntil > s.minute;
+  return (
+    <div className="app">
+      <header>
+        <a className="brand" href="#">
+          <span>
+            <Ambulance size={23} />
+          </span>
+          belos<span className="brand-sub">TRANSPORT OPERATIONS</span>
+        </a>
+        <div className="header-right">
+          <span className="demo-label">
+            <span className="dot" />
+            {isDemo ? 'Demo shift' : 'Backend mode'}
+          </span>
+          <span className="header-clock">
+            <Clock3 size={15} />
+            {clock(s.minute)}
+          </span>
+          <button
+            className="quiet"
+            disabled={busy}
+            onClick={() => {
+              setSelected('AMB-01');
+              void run(() => client.load());
+            }}
+          >
+            <RotateCcw size={14} />
+            <span>Reset demo</span>
+          </button>
+        </div>
+      </header>
+      <main className="map-workspace">
+        <section className="map-stage" aria-label="Transport map workspace">
+          <CityMap snapshot={s} selected={selected} onSelect={setSelected} />
+          <div className="map-heading">
+            <div className="eyebrow">TROY, NEW YORK</div>
+            <h1>Your fleet. One clear view.</h1>
+            <p>Medical transport coordination</p>
+          </div>
+          <section className="map-stats" aria-label="Shift summary">
+            <div>
+              <span className="dot" />
+              <strong>{available.length}</strong>
+              <span>available</span>
+            </div>
+            <div>
+              <span className="dot orange" />
+              <strong>{delayed.length}</strong>
+              <span>need attention</span>
+            </div>
+            <div>
+              <span className="dot gray" />
+              <strong>{s.vehicles.filter((v) => v.outOfService).length}</strong>
+              <span>out of service</span>
+            </div>
+          </section>
+          <div className="map-bottom">
+            <div className="map-legend">
+              <span>
+                <i className="dot" />
+                Active unit
+              </span>
+              <span>
+                <i className="dot orange" />
+                Delayed
+              </span>
+              <span>
+                <i className="dot gray" />
+                Out of service
+              </span>
+            </div>
+            <span className="map-note">
+              Synthetic data · Illustrative direct routes
+            </span>
+          </div>
+        </section>
+        <aside className="sidebar" aria-label="Transport controls">
+          <div className="sidebar-title">
+            <div>
+              <div className="eyebrow">SHIFT WORKSPACE</div>
+              <h2>Transport desk</h2>
+            </div>
+            <span className="pill neutral">{s.trips.length} trips</span>
+          </div>
+          {error && (
+            <div className="error" role="alert">
+              {error}
+            </div>
+          )}
+          <div className="shift-controls">
+            <label className="traffic">
+              <input
+                type="checkbox"
+                checked={s.traffic}
+                disabled={busy}
+                onChange={(e) =>
+                  act({ type: 'traffic', enabled: e.target.checked })
+                }
+              />{' '}
+              Road slowdown
+            </label>
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() => act({ type: 'advance', minutes: 5 })}
+            >
+              <Plus size={14} />
+              Advance 5 min
+            </button>
+          </div>
+          <div className="sidebar-sections">
+            <details className="drawer controls" open>
+              <summary>
+                <span>
+                  <Ambulance size={17} />
+                  Selected ambulance
+                </span>
+                <span className="summary-meta">{selected}</span>
+              </summary>
+              <div className="control-content">
+                <label htmlFor="unit">Ambulance</label>
+                <select
+                  id="unit"
+                  value={selected}
+                  onChange={(e) => setSelected(e.target.value)}
+                >
+                  {s.vehicles.map((unit) => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.id} · {unit.crew}
+                    </option>
+                  ))}
+                </select>
+                <div className="unit-state">
+                  <span
+                    className={`dot ${v.outOfService ? 'gray' : held ? 'orange' : ''}`}
+                  />
+                  {v.outOfService
+                    ? 'Out of service'
+                    : held
+                      ? `${v.holdReason} until ${clock(v.holdUntil)}`
+                      : vehicleTrip
+                        ? statusLabel(vehicleTrip)
+                        : 'Available for transport'}
+                </div>
+                {vehicleTrip && (
+                  <p className="current-trip">
+                    {vehicleTrip.id} ·{' '}
+                    {vehicleTrip.status === 'onboard'
+                      ? vehicleTrip.to
+                      : vehicleTrip.from}
+                  </p>
+                )}
+                <button
+                  className="action"
+                  disabled={busy || v.outOfService}
+                  onClick={() => act({ type: 'delay', vehicleId: v.id })}
+                >
+                  <Clock3 size={18} />
+                  <span>
+                    <strong>Crew running late</strong>
+                    <small>Hold this unit for 10 more minutes</small>
+                  </span>
+                  <Plus size={15} />
+                </button>
+                <button
+                  className="action"
+                  disabled={busy || v.outOfService}
+                  onClick={() => act({ type: 'emergency', vehicleId: v.id })}
+                >
+                  <TriangleAlert size={18} />
+                  <span>
+                    <strong>Emergency interruption</strong>
+                    <small>Pause this transport for 15 minutes</small>
+                  </span>
+                  <Plus size={15} />
+                </button>
+                <button
+                  className={`action ${v.outOfService ? 'restore' : 'outage'}`}
+                  disabled={busy}
+                  onClick={() =>
+                    act({
+                      type: v.outOfService ? 'restore' : 'outage',
+                      vehicleId: v.id,
+                    })
+                  }
+                >
+                  {v.outOfService ? (
+                    <Check size={18} />
+                  ) : (
+                    <Ambulance size={18} />
+                  )}
+                  <span>
+                    <strong>
+                      {v.outOfService
+                        ? 'Return to service'
+                        : 'Ambulance out of order'}
+                    </strong>
+                    <small>
+                      {v.outOfService
+                        ? 'Make this unit available again'
+                        : 'Release its trip for reassignment'}
+                    </small>
+                  </span>
+                </button>
+                <p className="help">
+                  An interruption holds the selected unit. A breakdown stops it
+                  and flags its transport for a replacement.
+                </p>
+              </div>
+            </details>
+            <details className="drawer schedule">
+              <summary>
+                <span>
+                  <Clock3 size={17} />
+                  Transport schedule
+                </span>
+                <span className="summary-meta">
+                  {pending.length} unassigned
+                </span>
+              </summary>
+              <div className="trip-list">
+                {s.trips.map((t) => {
+                  const arrival = eta(s, t),
+                    delay = late(s, t),
+                    assignedUnit = s.vehicles.find(
+                      (unit) => unit.id === t.vehicleId,
+                    );
+                  return (
+                    <article
+                      className={`trip ${t.status === 'transfer' ? 'needs-transfer' : ''}`}
+                      key={t.id}
+                    >
+                      <div className="trip-time">
+                        <strong>{clock(t.scheduled)}</strong>
+                        <span>pickup</span>
+                      </div>
+                      <div className="trip-body">
+                        <div className="trip-route">
+                          <strong>{t.from}</strong>
+                          <ArrowRight size={13} />
+                          <strong>{t.to}</strong>
+                        </div>
+                        <div className="trip-meta">
+                          <span>{t.id}</span>
+                          <span
+                            className={`pill ${t.status === 'complete' ? 'green' : t.status === 'transfer' ? 'red' : t.status === 'waiting' ? 'amber' : 'neutral'}`}
+                          >
+                            {statusLabel(t)}
+                          </span>
+                          {assignedUnit &&
+                            assignedUnit.holdUntil > s.minute && (
+                              <span className="delay">
+                                {assignedUnit.holdReason} until{' '}
+                                {clock(assignedUnit.holdUntil)}
+                              </span>
+                            )}
+                          {delay > 0 && (
+                            <span className="delay">
+                              {delay} min{' '}
+                              {t.actualPickup !== undefined
+                                ? 'late pickup'
+                                : 'pickup delay'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="trip-bottom">
+                          {['waiting', 'transfer'].includes(t.status) ? (
+                            <label className="assign-label">
+                              {t.status === 'transfer'
+                                ? 'Send replacement'
+                                : 'Assign ambulance'}
+                              <select
+                                aria-label={`Assign ${t.id}`}
+                                value=""
+                                disabled={busy || available.length === 0}
+                                onChange={(e) =>
+                                  act({
+                                    type: 'assign',
+                                    tripId: t.id,
+                                    vehicleId: e.target.value,
+                                  })
+                                }
+                              >
+                                <option value="">
+                                  {available.length
+                                    ? 'Choose unit…'
+                                    : 'No units available'}
+                                </option>
+                                {available.map((unit) => (
+                                  <option key={unit.id} value={unit.id}>
+                                    {unit.id} · {unit.crew}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : (
+                            <span>
+                              {t.vehicleId} <span className="separator">·</span>{' '}
+                              {t.status === 'complete'
+                                ? `Delivered ${clock(t.completedAt!)}`
+                                : `${t.status === 'onboard' ? 'Drop-off' : t.transferLocation ? 'Transfer' : 'Pickup'} ETA ${arrival === null ? '—' : clock(t.status === 'pickup' ? Math.max(arrival, t.scheduled) : arrival)}`}
+                            </span>
+                          )}
+                          {t.status === 'transfer' && (
+                            <span className="transfer-note">
+                              Patient remains at stopped vehicle.
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+              <div className="schedule-note">
+                <MapPin size={14} />
+                Fictional facilities around Troy. ETAs update when you add
+                delays or change traffic.
+              </div>
+            </details>
+            <details className="drawer fleet">
+              <summary>
+                <span>
+                  <Activity size={17} />
+                  Fleet status
+                </span>
+                <span className="summary-meta">{s.vehicles.length} units</span>
+              </summary>
+              {s.vehicles.map((unit) => (
+                <button
+                  key={unit.id}
+                  className={`fleet-row ${selected === unit.id ? 'selected' : ''}`}
+                  onClick={() => setSelected(unit.id)}
+                >
+                  <span
+                    className={`dot ${unit.outOfService ? 'gray' : unit.holdUntil > s.minute ? 'orange' : ''}`}
+                  />
+                  <strong>{unit.id}</strong>
+                  <span>
+                    {unit.outOfService
+                      ? 'Out of service'
+                      : unit.holdUntil > s.minute
+                        ? 'Delayed'
+                        : unit.tripId
+                          ? 'On a trip'
+                          : 'Available'}
+                  </span>
+                </button>
+              ))}
+            </details>
+            <details className="drawer log">
+              <summary>
+                <span>
+                  <MapPin size={17} />
+                  Shift updates
+                </span>
+                <span className="summary-meta">{s.events.length}</span>
+              </summary>
+              <div aria-live="polite">
+                {s.events.slice(0, 6).map((e, i) => (
+                  <p key={`${i}-${e}`}>
+                    <span className="dot" />
+                    {e}
+                  </p>
+                ))}
+              </div>
+            </details>
+            <details className="drawer about">
+              <summary>
+                <span>About this demo</span>
+              </summary>
+              <p>
+                Scheduled medical pickups and facility transfers. Direct-line
+                travel at 30 km/h; road slowdown halves speed. Transfers are
+                simulated. Use Advance 5 min to move the shift forward.
+              </p>
+            </details>
+          </div>
+          <div className="sidebar-footer">
+            <span className="dot" />
+            Transport simulation · No patient data
+          </div>
+        </aside>
+      </main>
+    </div>
+  );
 }
