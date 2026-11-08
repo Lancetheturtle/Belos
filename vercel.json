@@ -12,5 +12,15 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "daemons": {
+    "belos-worker": {
+      "root": ".",
+      "entrypoint": "Dockerfile.worker",
+      "instances": {
+        "iad1": 1
+      },
+      "terminationGracePeriodSeconds": 45
+    }
+  }
 }
