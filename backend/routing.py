@@ -1,9 +1,14 @@
 import math
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from backend.database import get_db
+from backend.models import VehicleRow, TripRow
+
+router = APIRouter(tags=["Routing"])
 
 
 def calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    # Simple Haversine or distance estimation logic
-    R = 3958.8  # Radius of Earth in miles
+    R = 3958.8
     dlat = math.radians(lat2 - lat1)
     dlng = math.radians(lng2 - lng1)
     a = (
@@ -16,15 +21,7 @@ def calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> fl
     return R * c
 
 
-def interpolate_position(
-    current_lat, current_lng, target_lat, target_lng, step_fraction
-):
-    lat = current_lat + (target_lat - current_lat) * step_fraction
-    lng = current_lng + (target_lng - current_lng) * step_fraction
-    return lat, lng
-
-
-@app.patch("/vehicles/{vehicle_id}/status")
+@router.patch("/vehicles/{vehicle_id}/status")
 def update_vehicle_status(
     vehicle_id: str, new_status: str, db: Session = Depends(get_db)
 ):
@@ -33,12 +30,9 @@ def update_vehicle_status(
         raise HTTPException(status_code=404, detail="Vehicle not found")
 
     if new_status == "out_of_service" and vehicle.trip_id:
-        # Find the active trip and unassign / queue it for reassignment
         trip = db.query(TripRow).filter(TripRow.id == vehicle.trip_id).first()
         if trip:
-            trip.status = "pending"  # Send back to queue for dispatch
-
-        # Clear the vehicle's trip assignment
+            trip.status = "pending"
         vehicle.trip_id = None
 
     vehicle.status = new_status

@@ -1,6 +1,5 @@
-# backend/services/dispatch.py
 from sqlalchemy.orm import Session
-from backend.models import Truck, EmergencyCall  # Using absolute imports
+from backend.models import Truck, EmergencyCall
 from math import radians, sin, cos, sqrt, atan2
 
 def calculate_distance(lat1, lon1, lat2, lon2):
@@ -12,7 +11,6 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     return R * c
 
 def assign_best_truck_to_call(db: Session, call_id: int, call_lat: float, call_lon: float):
-    # 1. Fetch all available trucks
     available_trucks = db.query(Truck).filter(
         Truck.status == "AVAILABLE",
         Truck.is_active_trip == False
@@ -26,10 +24,8 @@ def assign_best_truck_to_call(db: Session, call_id: int, call_lat: float, call_l
 
     for truck in available_trucks:
         distance = calculate_distance(call_lat, call_lon, truck.current_lat, truck.current_lon)
-        score = distance 
-
-        if score < min_score:
-            min_score = score
+        if distance < min_score:
+            min_score = distance
             best_truck = truck
 
     if best_truck:

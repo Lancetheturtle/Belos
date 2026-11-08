@@ -1,6 +1,6 @@
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
-from .models import VehicleRow, TripRow, VehiclePositionRow
+from backend.models import VehicleRow, TripRow, VehiclePositionRow
 
 
 def save_position(db: Session, vehicle: VehicleRow, minute: int):
@@ -18,25 +18,20 @@ def save_position(db: Session, vehicle: VehicleRow, minute: int):
     )
 
 
-def advance_shift(db: Session, shift, minutes: int):
-    for _ in range(minutes):
-        shift.minute += 1
+def advance_shift(db: Session, minutes: int = 1):
+    for m in range(1, minutes + 1):
         vehicles = db.query(VehicleRow).all()
         for vehicle in vehicles:
-            # Update position logic here
-            save_position(db, vehicle, shift.minute)
+            save_position(db, vehicle, minute=m)
     db.commit()
 
 
 def create_initial_scenario(db: Session):
-    """Resets and initializes the simulation database with baseline vehicles and trips."""
-    # Clear existing rows
     db.query(VehiclePositionRow).delete()
     db.query(TripRow).delete()
     db.query(VehicleRow).delete()
     db.commit()
 
-    # Seed default test vehicle
     initial_vehicle = VehicleRow(
         id="AMB-01", lat=42.727286, lng=-73.695291, status="idle", trip_id=None
     )
@@ -47,12 +42,11 @@ def create_initial_scenario(db: Session):
 
 
 def get_current_snapshot(db: Session):
-    """Returns the current state dictionary matching the frontend transport contract."""
     vehicles = db.query(VehicleRow).all()
     trips = db.query(TripRow).all()
 
     return {
-        "minute": 0,  # Or track current shift minute from database/state
+        "minute": 0,
         "vehicles": [
             {
                 "id": v.id,
