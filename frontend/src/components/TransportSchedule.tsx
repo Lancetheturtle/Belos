@@ -1,9 +1,9 @@
 import { Clock3, MapPin, ArrowRight } from 'lucide-react';
 import type { Action, Snapshot, Vehicle } from '../types';
-import { eta, late } from '../mocks/simulation';
 import { clock } from '../utils/time';
 import { statusLabel } from '../utils/tripStatus';
 import ReassignTrip from './ReassignTrip';
+import { canAct } from '../api/client';
 
 type Props = {
   snapshot: Snapshot;
@@ -26,14 +26,14 @@ export default function TransportSchedule({
       <summary>
         <span>
           <Clock3 size={17} />
-          Demo trips
+          Transport schedule
         </span>
         <span className="summary-meta">{pending.length} unassigned</span>
       </summary>
       <div className="trip-list">
         {s.trips.map((t) => {
-          const arrival = eta(s, t),
-            delay = late(s, t),
+          const arrival = t.eta ?? null,
+            delay = t.actualPickup !== undefined ? Math.max(0, Math.ceil(t.actualPickup - t.scheduled)) : 0,
             assignedUnit = s.vehicles.find((unit) => unit.id === t.vehicleId);
           return (
             <article
@@ -77,15 +77,15 @@ export default function TransportSchedule({
                     <ReassignTrip
                       trip={t}
                       available={available}
-                      busy={busy}
+                      busy={busy || !canAct(s, 'assign')}
                       onAction={act}
                     />
                   ) : (
                     <span>
                       {t.vehicleId} <span className="separator">·</span>{' '}
                       {t.status === 'complete'
-                        ? `Delivered ${clock(t.completedAt!)}`
-                        : `${t.status === 'onboard' ? 'Drop-off' : t.transferLocation ? 'Transfer' : 'Pickup'} ETA ${arrival === null ? '—' : clock(t.status === 'pickup' ? Math.max(arrival, t.scheduled) : arrival)}`}
+                        ? `Delivered ${t.completedAt === undefined ? '—' : clock(t.completedAt)}`
+                        : `${t.status === 'onboard' ? 'Drop-off' : t.transferLocation ? 'Transfer' : 'Pickup'} ETA ${arrival === null ? '—' : clock(arrival)}`}
                     </span>
                   )}
                   {t.status === 'transfer' && (
@@ -101,8 +101,7 @@ export default function TransportSchedule({
       </div>
       <div className="schedule-note">
         <MapPin size={14} />
-        Fictional facilities around Troy. ETAs update when you add delays or
-        change traffic.
+        ETAs are shown only when supplied by the server. Assignments require server support.
       </div>
     </details>
   );

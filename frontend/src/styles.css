@@ -1046,7 +1046,7 @@ select {
 .call-ring-second {
   animation-delay: -1.2s;
 }
-/* Two clear workspaces: live simulation and imported records. */
+/* Two workspaces: server transport state and patient records. */
 [hidden] {
   display: none !important;
 }

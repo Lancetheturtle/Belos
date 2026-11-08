@@ -9,7 +9,6 @@ export default function ConnectionStatus({
 }) {
   const status = useSyncExternalStore(subscribeConnection, getConnection);
   const labels = {
-    demo: 'Demo · Local data',
     connecting: 'Connecting…',
     connected: 'Server connected',
     disconnected: 'Disconnected',
