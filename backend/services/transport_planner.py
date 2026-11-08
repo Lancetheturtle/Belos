@@ -3,7 +3,7 @@
 This is a scheduling heuristic, not a claim of global optimality. It never
 replaces the existing legacy truck-dispatch service.
 """
-from backend.services.osrm import get_road_route, get_time_matrix
+from backend.services.osrm import get_road_route, get_time_matrix, RoutingError
 from backend.services.transport_snapshot import ACTIVE
 from backend.transport_store import Store, TransportError, utc, ambulances, requests
 
@@ -68,7 +68,7 @@ def assign(store,clock,trip_id,vehicle_id):
     if t['status']=='transfer':
         location=prior.get('transferLocation')
         if not location: raise TransportError('Transfer location has not been recorded.')
-        target.update(pickup_lat=location[0],pickup_lng=location[1])
+        target.update(pickup_lat=location[0],pickup_lng=location[1],pickup_time=clock['reference_at'])
     body=route_plan(v,target,clock['minute'],clock['reference_at'],factor=2 if clock['traffic'] else 1)
     if t['status']=='transfer':
         body['transferLocation']=location
@@ -90,7 +90,49 @@ def assign(store,clock,trip_id,vehicle_id):
     store.event(clock['minute'],f'{trip_id} assigned to {vehicle_id}.','assignment',trip_id,None,vehicle_id)
 
 
-def optimize(store,clock):
+
+def recover_transfers(store,clock):
+    """Send the fastest feasible free unit to each stranded patient, before queued work."""
+    _,pending=store.source()
+    for trip in pending:
+        if trip['status']!='transfer' or trip['ambulance_id']: continue
+        units,trips=store.source()
+        prior=store.all_plans().get(trip['request_id'],{}).get('body',{})
+        location=prior.get('transferLocation')
+        if not location:
+            store.event(clock['minute'],f"{trip['request_id']}: automatic replacement unavailable; transfer location is missing.")
+            continue
+        target={**trip,'pickup_lat':location[0],'pickup_lng':location[1],'pickup_time':clock['reference_at']}
+        busy={t['ambulance_id'] for t in trips if t['status'] in ACTIVE}
+        holds=store.holds()
+        candidates=[]
+        routing_failed=False
+        for unit in units:
+            vid=unit['ambulance_id']
+            if vid in busy or not eligible(unit,trip) or holds.get(vid,{}).get('hold_until',0)>clock['minute']: continue
+            shift_end=(utc(unit['shift_end_at'])-utc(clock['reference_at'])).total_seconds()/60
+            if shift_end<=clock['minute']: continue
+            try:
+                plan=route_plan(unit,target,clock['minute'],clock['reference_at'],factor=2 if clock['traffic'] else 1)
+            except RoutingError:
+                routing_failed=True
+                continue
+            if plan['predictedAvailable']<=shift_end:
+                candidates.append((plan['approach']['durationSeconds'],vid))
+        for _,vid in sorted(candidates):
+            try:
+                with store.db.begin_nested(): assign(store,clock,trip['request_id'],vid)
+            except (RoutingError,TransportError):
+                continue
+            store.event(clock['minute'],f"{trip['request_id']}: {vid} automatically dispatched to the stopped ambulance for patient transfer.")
+            break
+        else:
+            reason='road routing unavailable or no feasible replacement' if routing_failed else 'no feasible replacement currently available'
+            store.event(clock['minute'],f"{trip['request_id']}: awaiting transfer; {reason}. Replan fleet schedule retries automatic recovery.")
+
+
+def optimize(store,clock,*,recover=True):
+    if recover: recover_transfers(store,clock)
     units,trips=store.source()
     prepare_active(store,clock,units,trips)
     existing=store.all_plans()

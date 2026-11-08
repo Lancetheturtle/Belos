@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Ambulance,
   Clock3,
   MapPin,
   Activity,
@@ -75,7 +74,7 @@ export default function Dashboard() {
   if (!s)
     return (
       <main className="loading">
-        <Ambulance size={32} />
+        <img src="/logo.png" alt="Belos" width={32} height={32} />
         <h1>Belos transport</h1>
         <p>{error || 'Loading the transport schedule…'}</p>
         {error && (
@@ -104,7 +103,7 @@ export default function Dashboard() {
       <header>
         <a className="brand" href="#">
           <span>
-            <Ambulance size={23} />
+            <img src="/logo.png" alt="Belos" width={32} height={32} />
           </span>
           belos<span className="brand-sub">TRANSPORT OPERATIONS</span>
         </a>

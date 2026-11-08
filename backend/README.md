@@ -121,7 +121,7 @@ python -m backend.transport_runtime baseline
 
 To restore a previously saved real `/transport/state` snapshot instead, use `python -m backend.transport_runtime baseline --snapshot <snapshot.json>`. Existing baselines cannot be overwritten. For this installation, the saved original 15-ambulance/60-request Tiger Data snapshot was imported; the baseline is now in Tiger Data, not a frontend fixture.
 
-The sidebar's **Reset simulation** button asks for confirmation, then sends `POST /transport/commands` with `{"type":"reset"}`. Reset restores baseline positions, vehicle/trip statuses, assignments, and the original recorded clock; it pauses at 1x with traffic off. It clears derived plans and holds. Routes are rebuilt with **Prepare active road routes** or when the worker resumes. This is the recorded starting state, not a fabricated all-idle fleet or necessarily minute zero.
+The sidebar's **Reset simulation** button asks for confirmation, then sends `POST /transport/commands` with `{"type":"reset"}`. Reset restores baseline positions, vehicle/trip statuses, assignments, and the original recorded clock; it pauses at 1x with traffic off. It clears derived plans and holds. Reset automatically prepares active road routes while staying paused. If routing is unavailable, the reset still succeeds and logs a retry message; use **Prepare active road routes** to retry. This is the recorded starting state, not a fabricated all-idle fleet or necessarily minute zero.
 
 Reset and worker ticks serialize on the same database clock lock. All updates and a full pre-reset source/plan/hold checkpoint commit atomically. Events and position history remain as an audit trail. Patient details, addresses, schedules, fleet configuration and unrelated tables are not overwritten. Changed directory IDs cause reset to fail without writes. The legacy `/transport/reset` endpoint is not used.
 
@@ -129,3 +129,8 @@ The baseline and backups persist in `belos_transport_checkpoints`. No automatic 
 
 
 The dashboard now has one pause control: **Pause backend simulation**. Snapshot polling stays live and retries read failures automatically. The backend returns each vehicle route as only the remaining geometry, starting at its authoritative position, with `routePhase` (`pickup`, `dropoff`, or `stopped`). The frontend colors pickup legs green and drop-off legs blue without calculating progress. Multiple distinct patients can legitimately share a pickup facility; assignment remains exclusive per request, not per street coordinate.
+
+
+## Automatic patient recovery after an outage
+
+Onboard patient transfers now select the fastest feasible free replacement using OSRM approach driving time. Eligibility, crew, capacity, holds, active trips and shift end are checked. The replacement drives to the stopped ambulance, preserves the original pickup record, then continues to the destination. Future reservations may be released and replanned, but active patient trips are never interrupted. A failed or infeasible recovery remains visibly awaiting transfer; Replan fleet schedule / Retry automatic replacement retries selection. Routing failure does not undo the recorded outage or a successful replacement assignment. This supersedes earlier references to requiring manual replacement selection.

@@ -151,9 +151,10 @@ class IntegrationTests(unittest.TestCase):
             position=snapshot(db)['vehicles'][0]['position']
             command(db,{'type':'outage','vehicleId':'AMB-1'})
             s=snapshot(db)
-            self.assertEqual(s['trips'][0]['status'],'transfer')
+            self.assertEqual(s['trips'][0]['status'],'pickup')
+            self.assertEqual(s['trips'][0]['vehicleId'],'AMB-2')
             self.assertEqual(s['trips'][0]['transferLocation'],position)
-            command(db,{'type':'assign','tripId':'TR-1','vehicleId':'AMB-2'})
+            self.assertEqual(store.all_plans()['TR-1']['body']['approach']['path'][-1],position)
             self.assertEqual(snapshot(db)['trips'][0]['actualPickup'],actual)
             command(db,{'type':'restore','vehicleId':'AMB-1'})
             self.assertNotIn('tripId',snapshot(db)['vehicles'][0])
@@ -280,7 +281,9 @@ class IntegrationTests(unittest.TestCase):
             command(db,{'type':'assign','tripId':'TR-1','vehicleId':'AMB-1'})
             store=Store(db);clock=store.clock()
             advance(store,clock,3.5);store.save_clock(clock)
+            store.update_source(ambulances,'ambulance_id','AMB-2',status='out_of_service')
             command(db,{'type':'outage','vehicleId':'AMB-1'})
+            store.update_source(ambulances,'ambulance_id','AMB-2',status='available')
             units,trips=store.source()
             v=next(v for v in units if v['ambulance_id']=='AMB-2')
             t=next(t for t in trips if t['request_id']=='TR-2')
@@ -460,6 +463,92 @@ class IntegrationTests(unittest.TestCase):
             s=snapshot(db)
             self.assertNotIn('route',s['vehicles'][0])
             self.assertEqual(s['vehicles'][1]['routePhase'],'dropoff')
+
+
+    def test_automatic_transfer_chooses_fastest_road_candidate(self):
+        with self.sessions.begin() as db:
+            store=Store(db)
+            unit=dict(store.source()[0][1])
+            unit.update(ambulance_id='AMB-3',current_lat=42.75)
+            db.execute(insert(ambulances).values(**unit))
+            command(db,{'type':'assign','tripId':'TR-1','vehicleId':'AMB-1'})
+            clock=store.clock();advance(store,clock,3.5);store.save_clock(clock)
+            def timed_route(start,end):
+                result=road(start,end)
+                result['durationSeconds']=20 if start[0]==42.75 else 60
+                return result
+            with patch('backend.services.transport_planner.get_road_route',side_effect=timed_route):
+                command(db,{'type':'outage','vehicleId':'AMB-1'})
+            self.assertEqual(snapshot(db)['trips'][0]['vehicleId'],'AMB-3')
+
+    def test_failed_transfer_routing_preserves_patient_and_can_retry(self):
+        with self.sessions.begin() as db:
+            store=Store(db)
+            command(db,{'type':'assign','tripId':'TR-1','vehicleId':'AMB-1'})
+            clock=store.clock();advance(store,clock,3.5);store.save_clock(clock)
+            stopped=snapshot(db)['vehicles'][0]['position']
+            with patch('backend.services.transport_planner.get_road_route',side_effect=RoutingError('offline')):
+                command(db,{'type':'outage','vehicleId':'AMB-1'})
+            trip=snapshot(db)['trips'][0]
+            self.assertEqual(trip['status'],'transfer')
+            self.assertEqual(trip['transferLocation'],stopped)
+            self.assertNotIn('vehicleId',trip)
+            command(db,{'type':'optimize'})
+            self.assertEqual(snapshot(db)['trips'][0]['vehicleId'],'AMB-2')
+
+    def test_automatic_transfer_does_not_interrupt_active_patient(self):
+        with self.sessions.begin() as db:
+            store=Store(db)
+            command(db,{'type':'assign','tripId':'TR-1','vehicleId':'AMB-1'})
+            command(db,{'type':'assign','tripId':'TR-2','vehicleId':'AMB-2'})
+            clock=store.clock();advance(store,clock,3.5);store.save_clock(clock)
+            command(db,{'type':'outage','vehicleId':'AMB-1'})
+            s=snapshot(db)
+            self.assertEqual(s['trips'][0]['status'],'transfer')
+            self.assertEqual(s['trips'][1]['vehicleId'],'AMB-2')
+            self.assertEqual(s['vehicles'][1]['tripId'],'TR-2')
+
+
+    def test_replacement_outage_keeps_patient_at_original_transfer_location(self):
+        with self.sessions.begin() as db:
+            store=Store(db)
+            command(db,{'type':'assign','tripId':'TR-1','vehicleId':'AMB-1'})
+            clock=store.clock();advance(store,clock,3.5);store.save_clock(clock)
+            stopped=snapshot(db)['vehicles'][0]['position']
+            command(db,{'type':'outage','vehicleId':'AMB-1'})
+            self.assertEqual(snapshot(db)['trips'][0]['vehicleId'],'AMB-2')
+            command(db,{'type':'outage','vehicleId':'AMB-2'})
+            trip=snapshot(db)['trips'][0]
+            self.assertEqual(trip['status'],'transfer')
+            self.assertEqual(trip['transferLocation'],stopped)
+
+
+    def test_reset_prepares_active_routes_without_advancing_or_resuming(self):
+        from backend.services.transport_reset import save_baseline
+        with self.sessions.begin() as db:
+            command(db,{'type':'assign','tripId':'TR-1','vehicleId':'AMB-1'})
+            save_baseline(db)
+            before=snapshot(db)
+        response=self.client().post('/transport/commands',json={'type':'reset'})
+        self.assertEqual(response.status_code,200,response.text)
+        after=response.json()
+        self.assertGreater(len(after['vehicles'][0]['route']),1)
+        self.assertEqual(after['vehicles'][0]['position'],before['vehicles'][0]['position'])
+        self.assertEqual(after['minute'],before['minute'])
+        self.assertFalse(after['integration']['running'])
+
+    def test_reset_survives_unavailable_routing_with_visible_retry_message(self):
+        from backend.services.transport_reset import save_baseline
+        with self.sessions.begin() as db:
+            command(db,{'type':'assign','tripId':'TR-1','vehicleId':'AMB-1'})
+            save_baseline(db)
+        with patch('backend.services.transport_planner.get_road_route',side_effect=RoutingError('offline')):
+            response=self.client().post('/transport/commands',json={'type':'reset'})
+        self.assertEqual(response.status_code,200,response.text)
+        after=response.json()
+        self.assertFalse(after['integration']['running'])
+        self.assertTrue(any('Road routes could not be prepared' in e for e in after['events']))
+        self.assertEqual(after['trips'][0]['vehicleId'],'AMB-1')
 
 
 if __name__=='__main__': unittest.main()

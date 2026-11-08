@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import insert
 from backend.transport_store import Store, TransportError, runtime, ambulances, requests
 from backend.services.transport_snapshot import recorded_clock, ACTIVE
-from backend.services.transport_planner import assign, optimize, prepare_active, reflow_queue
+from backend.services.transport_planner import assign, optimize, prepare_active, reflow_queue, recover_transfers
 from backend.services.transport_motion import change_traffic
 from backend.services.osrm import RoutingError
 
@@ -25,6 +25,13 @@ def command(db,payload):
     if kind=='reset':
         from backend.services.transport_reset import reset
         reset(store,clock)
+        # Reset restores active trips too; prepare their roads without moving them.
+        try:
+            with db.begin_nested():
+                units,trips=store.source()
+                prepare_active(store,clock,units,trips)
+        except (RoutingError,TransportError):
+            store.event(clock['minute'],'Reset completed and simulation paused. Road routes could not be prepared; retry Prepare active road routes.')
     elif kind=='assign':
         assign(store,clock,payload['tripId'],payload['vehicleId'])
     elif kind=='optimize':
@@ -73,10 +80,11 @@ def command(db,payload):
                 if t['ambulance_id']!=vid or t['status'] in ('completed','cancelled'): continue
                 row=rows.get(t['request_id'])
                 body=dict(row['body']) if row else {}
-                onboard=t['status']=='transporting' or 'actualPickup' in body
+                onboard=t['status']=='transporting' or 'actualPickup' in body or 'transferLocation' in body
                 if onboard:
                     transfer_required=True
-                    body['transferLocation']=[v['current_lat'],v['current_lng']]
+                    # A replacement can fail before reaching the stranded patient.
+                    body['transferLocation']=body.get('transferLocation',[v['current_lat'],v['current_lng']])
                 body.update(stage='released')
                 store.save_plan({'trip_id':t['request_id'],'vehicle_id':vid,'sequence':row['sequence'] if row else 0,'body':body})
                 store.update_source(requests,'request_id',t['request_id'],ambulance_id=None,status='transfer' if onboard else 'scheduled')
@@ -84,11 +92,10 @@ def command(db,payload):
                     'assignment',t['request_id'],vid,None)
             store.event(clock['minute'],f'{vid} marked out of service.')
             if transfer_required:
-                store.event(clock['minute'],'Patient transfer requires an explicit replacement assignment; queued planning was not automatically changed.')
-            else:
-                # Keep the outage even if the routing provider is unavailable.
-                try:
-                    with db.begin_nested(): optimize(store,clock)
-                except (RoutingError,TransportError):
-                    store.event(clock['minute'],'Outage recorded. Automatic replanning unavailable; affected trips need manual replacement or a later replan.')
+                recover_transfers(store,clock)
+            # Preserve the outage and successful patient recovery if queue planning fails.
+            try:
+                with db.begin_nested(): optimize(store,clock,recover=False)
+            except (RoutingError,TransportError):
+                store.event(clock['minute'],'Outage recorded. Automatic replanning unavailable; unassigned trips remain visible for a later replan.')
     store.save_clock(clock)

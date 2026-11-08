@@ -13,9 +13,15 @@ export default function ReassignTrip({
   busy,
   onAction: act,
 }: Props) {
+  if (t.status === 'transfer') return (
+    <div className="transfer-note">
+      <span>Awaiting an eligible automatic replacement.</span>
+      <button disabled={busy} onClick={() => act({ type: 'optimize' })}>Retry automatic replacement</button>
+    </div>
+  );
   return (
     <label className="assign-label">
-      {t.status === 'transfer' ? 'Send replacement' : 'Assign ambulance'}
+      Assign ambulance
       <select
         aria-label={`Assign ${t.id}`}
         value=""
