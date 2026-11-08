@@ -5,24 +5,24 @@ from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy import text
 
-# Use relative imports with dots (.) for files inside the same backend folder
-from .database import engine, get_db, Base
-from .models import VehicleRow, TripRow, VehiclePositionRow
-from .simulation import advance_shift, create_initial_scenario, get_current_snapshot
+from backend.database import engine, get_db, Base
+from backend.simulation import advance_shift, create_initial_scenario, get_current_snapshot
+from backend.services.dispatch import assign_best_truck_to_call, reroute_ambulance_to_call
+from backend.routing import router as routing_router
 
-# Create database tables automatically on startup
-Base.metadata.create_all(bind=engine)
-
+# Single authoritative FastAPI app initialization
 app = FastAPI(title="Belos Medical Transport Backend", version="1.0.0")
 
-# Enable CORS for frontend connectivity
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins for local dev
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(routing_router)
 
 
 class ActionPayload(BaseModel):
@@ -32,21 +32,26 @@ class ActionPayload(BaseModel):
     vehicle_id: Optional[str] = None
 
 
+@app.on_event("startup")
+def startup_event():
+    print("Attempting to connect to Tiger Data...")
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("Successfully connected and initialized tables!")
+    except Exception as e:
+        print(f"CRITICAL: Could not connect to database: {e}")
+
+
 @app.post("/transport/reset")
 def transport_reset(db: Session = Depends(get_db)):
-    """Resets the simulation to the initial scenario state."""
     return create_initial_scenario(db)
 
 
 @app.post("/transport/action")
 def transport_action(payload: ActionPayload, db: Session = Depends(get_db)):
-    """Advances the simulation shift or handles user dispatcher actions."""
     try:
-        # If the action involves advancing time
         if payload.minutes and payload.minutes > 0:
-            # Fetch current shift state or create a default session tracker
             advance_shift(db, payload.minutes)
-
         return get_current_snapshot(db)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -60,7 +65,6 @@ def health_check():
 @app.get("/health/db")
 def test_db_connection(db: Session = Depends(get_db)):
     try:
-        # Execute a simple raw SQL query to test live connectivity
         result = db.execute(text("SELECT 1")).scalar()
         return {
             "status": "success",
@@ -73,33 +77,13 @@ def test_db_connection(db: Session = Depends(get_db)):
         )
 
 
-app = FastAPI()
-
-
-@app.on_event("startup")
-def startup_event():
-    print("Attempting to connect to Tiger Data...")
-    try:
-        Base.metadata.create_all(bind=engine)
-        print("Successfully connected and initialized tables!")
-    except Exception as e:
-        print(f"CRITICAL: Could not connect to database: {e}")
-
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from backend.database import get_db
-from backend.services.dispatch import assign_best_truck_to_call
-
-router = APIRouter(prefix="/calls", tags=["Dispatch"])
-
-@router.post("/{call_id}/dispatch")
+@app.post("/calls/{call_id}/dispatch")
 def dispatch_truck_for_call(call_id: int, call_lat: float, call_lon: float, db: Session = Depends(get_db)):
     truck = assign_best_truck_to_call(db, call_id, call_lat, call_lon)
     if not truck:
         raise HTTPException(status_code=404, detail="No available trucks found for dispatch.")
     return {"message": "Truck successfully assigned", "truck_id": truck.id, "call_id": call_id}
 
-from backend.services.dispatch import reroute_ambulance_to_call
 
 @app.post("/trucks/{truck_id}/reroute/{call_id}")
 def api_reroute_truck(truck_id: int, call_id: int, db: Session = Depends(get_db)):
