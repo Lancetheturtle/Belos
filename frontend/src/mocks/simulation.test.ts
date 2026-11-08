@@ -143,3 +143,20 @@ test('road demo follows multi-point roads and waits for loading and unloading', 
   assert.equal(s.trips[0].status, 'complete');
   assert.equal(s.vehicles[0].tripId, undefined);
 });
+
+test('backend ETA overrides demo speed estimates and preserves unknown arrival', () => {
+  const s = createScenario();
+  s.trips[0].etaMinute = 42;
+  assert.equal(eta(s, s.trips[0]), 42);
+  s.trips[0].etaMinute = null;
+  assert.equal(eta(s, s.trips[0]), null);
+});
+
+test('speed changes preserve simulated time, assignments, and enforce the slider range', () => {
+  const initial = createScenario();
+  const fast = applyAction(initial, { type: 'set-speed', speed: 60 });
+  assert.equal(fast.simulationSpeed, 60);
+  assert.equal(fast.minute, initial.minute);
+  assert.deepEqual(fast.trips, initial.trips);
+  assert.throws(() => applyAction(initial, { type: 'set-speed', speed: 61 }));
+});

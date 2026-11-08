@@ -1283,3 +1283,58 @@ select {
     gap: 5px;
   }
 }
+
+.simulation-speed {
+  padding: 14px 22px;
+  border-bottom: 1px solid #263542;
+  font-size: 11px;
+}
+.simulation-speed label {
+  display: flex;
+  justify-content: space-between;
+  color: #c6dce8;
+}
+.simulation-speed input {
+  width: 100%;
+  margin: 12px 0;
+  accent-color: #55dec1;
+}
+.simulation-speed p {
+  color: #8ea8b8;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.speed-presets {
+  display: flex;
+  gap: 6px;
+}
+.speed-presets button {
+  flex: 1;
+  padding: 6px;
+}
+.speed-presets button[aria-pressed='true'] {
+  border-color: #55dec1;
+  color: #55dec1;
+}
+
+.feature-body form label {
+  display: block;
+  margin: 10px 0;
+}
+.feature-body form input,
+.feature-body form select {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  box-sizing: border-box;
+  background: #192935;
+  border: 1px solid #334956;
+  border-radius: 5px;
+  padding: 8px;
+  color: #d1e1e9;
+}
+.feature-body form + form {
+  border-top: 1px solid #334956;
+  margin-top: 20px;
+  padding-top: 10px;
+}

@@ -54,3 +54,33 @@ The payload above illustrates the schema, not measured results. Use identical de
 Demo scenarios are local-only presets. Fleet-wide automatic reoptimization remains backend work. A breakdown preset starts a new shift with AMB-01 out of service and TR-101 requiring replacement. Crew-delay preset starts AMB-01 with a ten-minute hold. Running either replaces the current local demo state.
 
 Static schedule overlay: source is frontend/src/data/transportDataset.json. Purple dots are CSV pickup coordinates, with selected destination highlighted in blue. They remain independent from moving simulation vehicles. Clicking a patient record enables the overlay and fits pickup/destination bounds. A future backend directory response should preserve the CSV identifiers and schema described in dataset-directory.md.
+
+## Implemented backend dispatch (supersedes manual-only API behavior above)
+
+Run `python -m uvicorn backend.main:app --port 8000` and `npm run dev:dispatch` from the repository root. Ordinary `npm run dev` still uses the isolated local demo.
+
+Backend mode now automatically assigns and replans the four-unit/six-trip simulation after delay, emergency hold, outage, restore, traffic changes, and completed transports. The next scheduled wave minimizes total pickup arrival time using an OSRM road-time matrix and Hungarian matching. Onboard patients remain locked unless their vehicle breaks down; replacements route from their own positions to the stranded patient's actual position, then the original destination. Clicking map records never changes scheduling priority.
+
+Optional `Trip.etaMinute: number | null` is the authoritative next-stop ETA in shift minutes. The frontend uses it instead of its demo's 30 km/h estimate. `Snapshot.dispatch` contains string fields `status`, `message`, `routingSource`, optional `algorithm`, and optional `lastPlannedMinute`. Status is `ready` or `routing-unavailable`. Assignment history is persisted by the server. No measured comparison KPIs are generated yet.
+
+Additional actions:
+```json
+{"type":"reoptimize"}
+{"type":"traffic-update","vehicleId":"AMB-01","factor":2}
+```
+Traffic factors range from 1 to 10; 1 clears that vehicle's slowdown. They are supplied simulation/feed data, not live traffic measurements. They trigger assignment recalculation, not segment-specific alternative road selection. The existing `traffic` action applies a global 2x time multiplier. No traffic toggle is exposed in the UI.
+
+OSRM road-profile and per-segment travel estimates drive movement and ETA; no fixed fleet-wide speed is used in backend mode. Real congestion requires a traffic-aware provider/feed. Failed routing retains valid plans while still applying the outage/hold, then retries. Client request timeout is 60 seconds to allow routing during initialization/replanning.
+
+The server owns time (default 15x); `advance` requests return HTTP 400. Pausing API map updates only stops the viewer polling. SQLite persists the simulation and history; no Tiger Data tables are touched. Run one server worker. API-mode reset only resets the local simulation snapshot. See backend/README.md for limitations and configuration. The CSV directory remains a static overlay.
+
+
+Map road pacing: optional `Vehicle.movementTimes` contains simulation-minute timestamps paired one-to-one with `movementPath`. The map interpolates by elapsed time rather than distance when present, preserving road segment speed differences and stationary holds at the existing 15x simulation rate. Legacy/local snapshots without timings retain distance interpolation. Speeds remain OSRM profile estimates, not asserted posted speed limits.
+
+
+### Full-cycle benchmark update
+
+Backend service times are now 15 minutes preparation/loading, 32 minutes unloading/handoff/paperwork, and 5 minutes reset. Driving still uses road estimates; the user-supplied benchmark uses 8+15 driving minutes, totaling 75. A unit stays unavailable throughout handoff and reset; only reset completion releases it for automatic dispatch. Reset shift once after updating to start a clean KPI run. `/debug` reports full-cycle duration from first assignment until availability, including waits/disruptions, separately from estimated next-pickup assignment savings. The 75-minute benchmark is an assumption, not an observed control group. Local frontend-only demo timing is separate; use `npm run dev:dispatch` for these KPIs.
+
+
+Simulation speed control: `POST /transport/action` accepts `{"type":"set-speed","speed":60}` (integer 1–60). Returned snapshots include `simulationSpeed`; the clock reads it on the next tick. All driving and service timers scale together, without resetting state or changing simulated-minute KPIs. Backend speed affects all connected viewers and /debug. Reset shift retains backend speed; restarting the server restores BELOS_SIM_SPEED (default 15). Frontend local demo supports the same slider independently; a local demo reset restores 15.

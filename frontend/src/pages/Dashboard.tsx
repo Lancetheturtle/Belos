@@ -18,6 +18,8 @@ import VehicleDetails from '../components/VehicleDetails';
 import TransportSchedule from '../components/TransportSchedule';
 import ConnectionStatus from '../components/ConnectionStatus';
 import ScenarioControls from '../components/ScenarioControls';
+import SpeedControl from '../components/SpeedControl';
+import DispatchEntry from '../components/DispatchEntry';
 import OptimizationResults from '../components/OptimizationResults';
 import DispatchVisibility from '../components/DispatchVisibility';
 // Accelerated demo time makes movement visible without waiting minutes per trip.
@@ -36,7 +38,9 @@ export default function Dashboard() {
   const [showSchedule, setShowSchedule] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
   const [history, setHistory] = useState<AssignmentChange[]>([]);
+  const [requestedSpeed, setRequestedSpeed] = useState<number | null>(null);
   const lock = useRef(false);
+  const pendingOperations = useRef<Array<() => Promise<Snapshot>>>([]);
   const snapshotRef = useRef<Snapshot | null>(null);
 
   function commit(next: Snapshot) {
@@ -69,11 +73,16 @@ export default function Dashboard() {
     snapshotRef.current = next;
     setS(next);
   }
-  async function run(op: () => Promise<Snapshot>) {
-    if (lock.current) return;
+  async function run(op: () => Promise<Snapshot>, background = false) {
+    if (lock.current) {
+      if (!background) pendingOperations.current.push(op);
+      return;
+    }
     lock.current = true;
-    setBusy(true);
-    setError('');
+    if (!background) {
+      setBusy(true);
+      setError('');
+    }
     try {
       commit(await op());
     } catch (e) {
@@ -81,7 +90,9 @@ export default function Dashboard() {
       setLive(false);
     } finally {
       lock.current = false;
-      setBusy(false);
+      if (!background) setBusy(false);
+      const next = pendingOperations.current.shift();
+      if (next) void run(next);
     }
   }
   useEffect(() => {
@@ -101,7 +112,9 @@ export default function Dashboard() {
       if (document.hidden || lock.current || !snapshotRef.current) return;
 
       if (isDemo) {
-        const minutes = (elapsed * LIVE_SPEED) / 60_000;
+        const minutes =
+          (elapsed * (snapshotRef.current.simulationSpeed ?? LIVE_SPEED)) /
+          60_000;
         if (minutes <= 0) return;
         try {
           commit(
@@ -115,7 +128,7 @@ export default function Dashboard() {
         apiElapsed += elapsed;
         if (apiElapsed >= 1000) {
           apiElapsed = 0;
-          void run(() => client.load());
+          void run(() => client.load(), true);
         }
       }
     }, LIVE_TICK_MS);
@@ -124,6 +137,16 @@ export default function Dashboard() {
     // every new Snapshot. The ref always points to the latest committed state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [Boolean(s), live]);
+
+  // Queue a speed change if a polling request is currently in flight.
+  useEffect(() => {
+    if (requestedSpeed === null || busy || !snapshotRef.current) return;
+    const speed = requestedSpeed;
+    setRequestedSpeed(null);
+    void run(() =>
+      client.act(snapshotRef.current!, { type: 'set-speed', speed }),
+    );
+  }, [requestedSpeed, busy]);
 
   if (!s)
     return (
@@ -207,7 +230,7 @@ export default function Dashboard() {
             }}
           >
             <RotateCcw size={14} />
-            <span>Reset demo</span>
+            <span>{isDemo ? 'Reset demo' : 'Reset shift'}</span>
           </button>
         </div>
       </header>
@@ -268,8 +291,9 @@ export default function Dashboard() {
               </span>
             </div>
             <span className="map-note">
-              Synthetic data · {live ? 'Live simulation' : 'Paused'} at{' '}
-              {LIVE_SPEED}× speed · Highlighted driving routes
+              {isDemo
+                ? `Synthetic data · ${live ? 'Live simulation' : 'Paused'} at ${s.simulationSpeed ?? LIVE_SPEED}× speed · Highlighted driving routes`
+                : `Backend dispatch simulation · ${s.simulationSpeed ?? LIVE_SPEED}× speed · Road-time estimates · No live traffic feed`}
             </span>
           </div>
         </section>
@@ -280,7 +304,11 @@ export default function Dashboard() {
               <h2>Dispatch</h2>
             </div>
             <span className="pill neutral">
-              {panel === 'live' ? 'Live demo' : 'CSV snapshot'}
+              {panel === 'live'
+                ? isDemo
+                  ? 'Live demo'
+                  : 'Auto dispatch'
+                : 'CSV snapshot'}
             </span>
           </div>
           {error && (
@@ -345,10 +373,44 @@ export default function Dashboard() {
                   onClick={() => setLive((running) => !running)}
                 >
                   {live ? <Pause size={14} /> : <Play size={14} />}
-                  {live ? 'Pause simulation' : 'Resume simulation'}
+                  {isDemo
+                    ? live
+                      ? 'Pause simulation'
+                      : 'Resume simulation'
+                    : live
+                      ? 'Pause map updates'
+                      : 'Resume map updates'}
                 </button>
               </div>
+              <SpeedControl
+                speed={s.simulationSpeed ?? LIVE_SPEED}
+                disabled={busy}
+                onChange={setRequestedSpeed}
+              />
+              {!isDemo && (
+                <DispatchEntry snapshot={s} busy={busy} onAction={act} />
+              )}
               <ScenarioControls busy={busy} onRun={runScenario} />
+              {!isDemo && (
+                <div className="feature-body" role="status">
+                  <strong>Automatic dispatch</strong>
+                  <p>{s.dispatch?.message ?? 'Waiting for dispatch status'}</p>
+                  <p>{s.dispatch?.routingSource}</p>
+                  <p>
+                    Replans after delays, traffic updates, breakdowns, and
+                    completed trips. Onboard patients stay assigned unless their
+                    ambulance breaks down.
+                  </p>
+                  <button
+                    disabled={busy}
+                    onClick={() => act({ type: 'reoptimize' })}
+                  >
+                    {s.dispatch?.status === 'routing-unavailable'
+                      ? 'Retry dispatch'
+                      : 'Recalculate assignments'}
+                  </button>
+                </div>
+              )}
               {missingRoutes.length > 0 && (
                 <div className="route-warning" role="status">
                   Road routes missing for{' '}
@@ -406,15 +468,19 @@ export default function Dashboard() {
                     onClick={() => setSelected(unit.id)}
                   >
                     <span
-                      className={`dot ${unit.outOfService ? 'gray' : unit.tripId || unit.holdUntil > s.minute ? '' : 'available'}`}
+                      className={`dot ${unit.outOfService ? 'gray' : unit.tripId || unit.dispatchUnavailable || unit.holdUntil > s.minute ? '' : 'available'}`}
                     />
                     <strong>{unit.id}</strong>
                     <span>
                       {unit.outOfService
                         ? 'Out of service'
-                        : unit.tripId || unit.holdUntil > s.minute
-                          ? 'Active'
-                          : 'Available'}
+                        : unit.dispatchUnavailable
+                          ? 'Unavailable'
+                          : unit.tripId ||
+                              unit.dispatchUnavailable ||
+                              unit.holdUntil > s.minute
+                            ? 'Active'
+                            : 'Available'}
                     </span>
                   </button>
                 ))}
@@ -442,10 +508,17 @@ export default function Dashboard() {
                   <span>About this demo</span>
                 </summary>
                 <p>
-                  Scheduled medical pickups and facility transfers. Road-route
-                  travel at 30 km/h; road slowdown halves speed. Transfers are
-                  simulated. The demo runs automatically at 15× speed. Pause or
-                  resume live movement using the control above.
+                  {!isDemo ? (
+                    'Backend runs the simulation clock. Pausing map updates only pauses this view. Uses road-profile travel times, simulated traffic factors, 15-minute loading, 32-minute handoff/paperwork, and a 5-minute reset. This is the four-unit demo; CSV patient records remain separate.'
+                  ) : (
+                    <>
+                      Scheduled medical pickups and facility transfers.
+                      Road-route travel at 30 km/h; road slowdown halves speed.
+                      Transfers are simulated. The demo runs automatically at
+                      {s.simulationSpeed ?? LIVE_SPEED}× speed. Pause or resume
+                      live movement using the control above.
+                    </>
+                  )}
                 </p>
               </details>
             </div>

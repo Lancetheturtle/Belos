@@ -10,13 +10,17 @@ export function distance(a: Position, b: Position): number {
   return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 export const free = (v: Vehicle, s: Snapshot) =>
-  !v.outOfService && !v.tripId && v.holdUntil <= s.minute;
+  !v.outOfService &&
+  !v.dispatchUnavailable &&
+  !v.tripId &&
+  v.holdUntil <= s.minute;
 export function target(t: Trip): Position {
   return t.status === 'onboard'
     ? t.destination
     : (t.transferLocation ?? t.pickup);
 }
 export function eta(s: Snapshot, t: Trip): number | null {
+  if (t.etaMinute !== undefined) return t.etaMinute;
   if (t.status === 'complete') return t.completedAt ?? s.minute;
   const v = s.vehicles.find((v) => v.id === t.vehicleId);
   if (!v || v.outOfService) return null;
@@ -173,6 +177,20 @@ export function createScenario(): Snapshot {
 }
 export function applyAction(state: Snapshot, action: Action): Snapshot {
   const s = structuredClone(state);
+  if (action.type === 'create-call' || action.type === 'report-status')
+    throw new Error('Call entry and status reports require backend mode.');
+  if (action.type === 'set-speed') {
+    if (
+      !Number.isInteger(action.speed) ||
+      action.speed < 1 ||
+      action.speed > 60
+    )
+      throw new Error('Speed must be between 1 and 60.');
+    s.simulationSpeed = action.speed;
+    return s;
+  }
+  if (action.type === 'reoptimize')
+    throw new Error('Automatic dispatch requires backend mode.');
   if (action.type === 'traffic') {
     s.traffic = action.enabled;
     event(

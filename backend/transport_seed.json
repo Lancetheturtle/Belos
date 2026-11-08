@@ -1,0 +1,151 @@
+{
+  "minute": 0,
+  "traffic": false,
+  "events": [
+    "09:00 · Transport shift started. Three pickups assigned."
+  ],
+  "vehicles": [
+    {
+      "id": "AMB-01",
+      "crew": "Crew A",
+      "position": [
+        42.72,
+        -73.687
+      ],
+      "outOfService": false,
+      "holdUntil": 0,
+      "holdReason": "",
+      "tripId": "TR-101"
+    },
+    {
+      "id": "AMB-02",
+      "crew": "Crew B",
+      "position": [
+        42.743,
+        -73.677
+      ],
+      "outOfService": false,
+      "holdUntil": 0,
+      "holdReason": "",
+      "tripId": "TR-102"
+    },
+    {
+      "id": "AMB-03",
+      "crew": "Crew C",
+      "position": [
+        42.727,
+        -73.66
+      ],
+      "outOfService": false,
+      "holdUntil": 0,
+      "holdReason": "",
+      "tripId": "TR-103"
+    },
+    {
+      "id": "AMB-04",
+      "crew": "Crew D",
+      "position": [
+        42.736,
+        -73.681
+      ],
+      "outOfService": false,
+      "holdUntil": 0,
+      "holdReason": ""
+    }
+  ],
+  "trips": [
+    {
+      "id": "TR-101",
+      "from": "Riverside care home",
+      "to": "Troy medical center",
+      "pickup": [
+        42.731,
+        -73.688
+      ],
+      "destination": [
+        42.743,
+        -73.671
+      ],
+      "scheduled": 5,
+      "status": "pickup",
+      "vehicleId": "AMB-01"
+    },
+    {
+      "id": "TR-102",
+      "from": "Northside residence",
+      "to": "Dialysis clinic",
+      "pickup": [
+        42.75,
+        -73.679
+      ],
+      "destination": [
+        42.725,
+        -73.68
+      ],
+      "scheduled": 10,
+      "status": "pickup",
+      "vehicleId": "AMB-02"
+    },
+    {
+      "id": "TR-103",
+      "from": "Eastside rehab",
+      "to": "Outpatient clinic",
+      "pickup": [
+        42.73,
+        -73.654
+      ],
+      "destination": [
+        42.72,
+        -73.675
+      ],
+      "scheduled": 10,
+      "status": "pickup",
+      "vehicleId": "AMB-03"
+    },
+    {
+      "id": "TR-104",
+      "from": "Troy medical center",
+      "to": "Riverside care home",
+      "pickup": [
+        42.743,
+        -73.671
+      ],
+      "destination": [
+        42.731,
+        -73.688
+      ],
+      "scheduled": 15,
+      "status": "waiting"
+    },
+    {
+      "id": "TR-105",
+      "from": "South Troy residence",
+      "to": "Dialysis clinic",
+      "pickup": [
+        42.71,
+        -73.68
+      ],
+      "destination": [
+        42.725,
+        -73.68
+      ],
+      "scheduled": 20,
+      "status": "waiting"
+    },
+    {
+      "id": "TR-106",
+      "from": "Outpatient clinic",
+      "to": "Eastside rehab",
+      "pickup": [
+        42.72,
+        -73.675
+      ],
+      "destination": [
+        42.73,
+        -73.654
+      ],
+      "scheduled": 25,
+      "status": "waiting"
+    }
+  ]
+}

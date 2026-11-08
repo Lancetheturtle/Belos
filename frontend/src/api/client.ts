@@ -39,5 +39,9 @@ export const client = {
   reset: async (): Promise<Snapshot> =>
     isDemo ? prepareRoads(createScenario()) : backend.reset(),
   act: async (s: Snapshot, a: Action): Promise<Snapshot> =>
-    isDemo ? prepareRoads(applyAction(s, a)) : backend.act(s, a),
+    isDemo
+      ? a.type === 'set-speed'
+        ? applyAction(s, a)
+        : prepareRoads(applyAction(s, a))
+      : backend.act(s, a),
 };

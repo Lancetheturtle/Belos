@@ -3,9 +3,13 @@ export type Vehicle = {
   route?: Position[];
   routeIndex?: number;
   movementPath?: Position[];
+  movementTimes?: number[];
   unloadingUntil?: number;
   id: string;
   crew: string;
+  dispatchUnavailable?: boolean;
+  reportedStatus?: string;
+  statusReportedAt?: string;
   position: Position;
   outOfService: boolean;
   holdUntil: number;
@@ -13,6 +17,8 @@ export type Vehicle = {
   tripId?: string;
 };
 export type Trip = {
+  requestKey?: string;
+  etaMinute?: number | null;
   transportRoute?: Position[];
   id: string;
   from: string;
@@ -27,6 +33,14 @@ export type Trip = {
   transferLocation?: Position;
 };
 export type Snapshot = {
+  simulationSpeed?: number;
+  dispatch?: {
+    status: string;
+    message: string;
+    routingSource: string;
+    algorithm?: string;
+    lastPlannedMinute?: number;
+  };
   assignmentHistory?: AssignmentChange[];
   optimizationResults?: OptimizationComparison;
   minute: number;
@@ -36,6 +50,23 @@ export type Snapshot = {
   events: string[];
 };
 export type Action =
+  | {
+      type: 'create-call';
+      requestKey: string;
+      pickupName: string;
+      destinationName: string;
+      pickup: Position;
+      destination: Position;
+      pickupInMinutes: number;
+    }
+  | {
+      type: 'report-status';
+      vehicleId: string;
+      status: 'available' | 'unavailable' | 'out_of_service';
+      observedAt: string;
+    }
+  | { type: 'set-speed'; speed: number }
+  | { type: 'reoptimize' }
   | { type: 'advance'; minutes: number }
   | { type: 'traffic'; enabled: boolean }
   | { type: 'delay' | 'emergency' | 'outage' | 'restore'; vehicleId: string }

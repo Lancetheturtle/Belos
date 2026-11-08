@@ -35,8 +35,6 @@ test('initial read and retry preserve server state, reset is explicit POST', asy
     'disconnected',
     'connecting',
     'connected',
-    'connecting',
-    'connected',
   ]);
 });
 test('network failures and malformed snapshots become disconnected', async () => {
@@ -105,4 +103,18 @@ test('backend plans retain authoritative assignment history and reject invalid m
   );
   s.optimizationResults.optimized.onTimePickups = 100;
   assert.throws(() => validateSnapshot(s), /metrics/);
+});
+
+test('successful background polls keep the connection stable, failures still disconnect', async () => {
+  const states: string[] = [];
+  let failing = false;
+  const api = createTransportClient('', async () => {
+    if (failing) throw new Error('offline');
+    return Response.json(createScenario());
+  }, state => states.push(state));
+  await api.load(); await api.load(); await api.load();
+  assert.deepEqual(states, ['connecting', 'connected']);
+  failing = true; await assert.rejects(api.load());
+  failing = false; await api.load();
+  assert.deepEqual(states, ['connecting', 'connected', 'disconnected', 'connecting', 'connected']);
 });
