@@ -51,13 +51,11 @@ export default function VehicleDetails({
           />
           {v.outOfService
             ? 'Out of service'
-            : v.dispatchUnavailable
-              ? 'Unavailable / crew not ready'
-              : held
-                ? `${v.holdReason} until ${clock(v.holdUntil)}`
-                : vehicleTrip
-                  ? statusLabel(vehicleTrip)
-                  : 'Available for transport'}
+            : held
+              ? `${v.holdReason} until ${clock(v.holdUntil)}`
+              : vehicleTrip
+                ? statusLabel(vehicleTrip)
+                : 'Available for transport'}
         </div>
         {vehicleTrip && (
           <p className="current-trip">

@@ -45,9 +45,3 @@ The latest demo starts moving automatically at 15x speed. Pause live / Resume li
 - API mode reads GET /transport/state and polls it while running. Connection status reflects actual validated requests and offers Retry on failure. Reset is POST /transport/reset only. Backend owns the clock. Missing route geometry has an explicit warning.
 
 See ../contracts/frontend-api.md for the new optional result/history payloads and state endpoint. Tests include mocked HTTP errors, invalid snapshots, missing routes, and successful reconnection.
-
-## Automatic road-time dispatch
-
-Start the Python backend with `python -m uvicorn backend.main:app --port 8000` from the repository root, then use `npm run dev:dispatch`. This enables API mode without editing local environment files. The normal `npm run dev` command still runs the old local demo.
-
-In API mode, use Report a problem to add a crew delay or mark a unit out of service. The backend automatically recalculates assignments; inspect Automatic dispatch and Assignment changes. Recalculate assignments manually retries planning. Pickup/drop-off ETAs come from backend road timings. Pause map updates pauses only your view, not the server clock. Routing uses road-profile estimates, not live traffic. The CSV patient layer remains separate. See backend/README.md.

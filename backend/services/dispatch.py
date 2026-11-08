@@ -1,5 +1,6 @@
+# backend/services/dispatch.py
 from sqlalchemy.orm import Session
-from backend.models import VehicleRow, TripRow
+from backend.models import Truck, EmergencyCall  # Using absolute imports
 from math import radians, sin, cos, sqrt, atan2
 
 def calculate_distance(lat1, lon1, lat2, lon2):
@@ -10,49 +11,53 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     c = 2 * atan2(sqrt(a), sqrt(1 - a))
     return R * c
 
-def assign_best_truck_to_call(db: Session, call_id: str, call_lat: float, call_lon: float):
-    # Query available vehicles from the active VehicleRow table
-    available_vehicles = db.query(VehicleRow).filter(
-        VehicleRow.status == "idle",
-        VehicleRow.trip_id == None
+def assign_best_truck_to_call(db: Session, call_id: int, call_lat: float, call_lon: float):
+    # 1. Fetch all available trucks
+    available_trucks = db.query(Truck).filter(
+        Truck.status == "AVAILABLE",
+        Truck.is_active_trip == False
     ).all()
 
-    if not available_vehicles:
+    if not available_trucks:
         return None
 
-    best_vehicle = None
+    best_truck = None
     min_score = float('inf')
 
-    for vehicle in available_vehicles:
-        distance = calculate_distance(call_lat, call_lon, vehicle.lat, vehicle.lng)
-        if distance < min_score:
-            min_score = distance
-            best_vehicle = vehicle
+    for truck in available_trucks:
+        distance = calculate_distance(call_lat, call_lon, truck.current_lat, truck.current_lon)
+        score = distance 
 
-    if best_vehicle:
-        best_vehicle.status = "dispatched"
-        best_vehicle.trip_id = str(call_id)
+        if score < min_score:
+            min_score = score
+            best_truck = truck
+
+    if best_truck:
+        best_truck.status = "DISPATCHED"
+        best_truck.is_active_trip = True
+        best_truck.current_assigned_call_id = call_id
         db.commit()
-        db.refresh(best_vehicle)
+        db.refresh(best_truck)
         
-    return best_vehicle
+    return best_truck
 
-def reroute_ambulance_to_call(db: Session, vehicle_id: str, new_trip_id: str):
-    vehicle = db.query(VehicleRow).filter(VehicleRow.id == vehicle_id).first()
-    trip = db.query(TripRow).filter(TripRow.id == new_trip_id).first()
+def reroute_ambulance_to_call(db: Session, truck_id: int, new_call_id: int):
+    truck = db.query(Truck).filter(Truck.id == truck_id).first()
+    call = db.query(EmergencyCall).filter(EmergencyCall.id == new_call_id).first()
     
-    if not vehicle or not trip:
-        return {"error": "Vehicle or Trip not found"}
+    if not truck or not call:
+        return {"error": "Truck or Emergency Call not found"}
     
-    vehicle.status = "rerouted"
-    vehicle.trip_id = str(new_trip_id)
+    truck.status = "DISPATCHED_REROUTED"
+    truck.is_active_trip = True
+    truck.current_assigned_call_id = new_call_id
     
     db.commit()
-    db.refresh(vehicle)
+    db.refresh(truck)
     
     return {
         "status": "success",
-        "message": f"Vehicle {vehicle.id} successfully rerouted to Trip {new_trip_id}",
-        "vehicle_id": vehicle.id,
-        "new_destination": {"lat": trip.dest_lat, "lng": trip.dest_lng}
+        "message": f"Truck {truck.id} successfully rerouted to Call {new_call_id}",
+        "truck_id": truck.id,
+        "new_destination": {"lat": call.latitude, "lon": call.longitude}
     }

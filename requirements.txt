@@ -1,7 +1,4 @@
 fastapi>=0.100.0
 uvicorn
 sqlalchemy
-pydantic>=2.7
-
-# API tests
-httpx
+pydantic

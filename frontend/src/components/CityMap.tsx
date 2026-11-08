@@ -4,8 +4,7 @@ import L from 'leaflet';
 
 import type { Position, Snapshot } from '../types';
 import { isDemo } from '../api/client';
-import { target } from '../mocks/simulation';
-import { movementTimeline, sampleMovement } from '../utils/mapMovement';
+import { distance, target } from '../mocks/simulation';
 
 // Match the dashboard's snapshot update cadence. The map interpolates between
 // real simulation positions; it never invents or saves its own dispatch state.
@@ -17,7 +16,6 @@ type Movement = {
   marker: L.CircleMarker;
   route?: L.Polyline;
   path: Position[];
-  timeline: number[];
   remaining: Position[];
 };
 
@@ -174,17 +172,13 @@ export default function CityMap({
       }
 
       marker.bringToFront();
-      const path = vehicle.movementPath?.length
-        ? vehicle.movementPath
-        : [from, vehicle.position];
       movements.push({
         from,
         to: vehicle.position,
         marker,
         route,
         remaining: vehicle.route?.slice((vehicle.routeIndex ?? 0) + 1) ?? [],
-        path,
-        timeline: movementTimeline(path, vehicle.movementTimes),
+        path: vehicle.movementPath ?? [from, vehicle.position],
       });
     }
 
@@ -266,8 +260,29 @@ export default function CityMap({
     previousMinute.current = snapshot.minute;
 
     const update = (progress: number) => {
-      for (const { marker, path, timeline, route, remaining } of movements) {
-        const { point, untraveled } = sampleMovement(path, timeline, progress);
+      for (const { from, to, marker, path, route, remaining } of movements) {
+        let point: Position = [
+          from[0] + (to[0] - from[0]) * progress,
+          from[1] + (to[1] - from[1]) * progress,
+        ];
+        let untraveled: Position[] = [];
+        if (path.length > 1) {
+          const lengths = path.slice(1).map((p, i) => distance(path[i], p));
+          let left = lengths.reduce((a, b) => a + b, 0) * progress;
+          point = path[path.length - 1];
+          for (let i = 0; i < lengths.length; i++) {
+            if (left <= lengths[i] && lengths[i] > 0) {
+              const t = left / lengths[i];
+              point = [
+                path[i][0] + (path[i + 1][0] - path[i][0]) * t,
+                path[i][1] + (path[i + 1][1] - path[i][1]) * t,
+              ];
+              untraveled = path.slice(i + 1);
+              break;
+            }
+            left -= lengths[i];
+          }
+        }
         marker.setLatLng(point);
         // Start the highlight at the displayed marker, retaining road bends ahead.
         // Include the rest of this animated tick before the authoritative route tail.

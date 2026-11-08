@@ -49,20 +49,6 @@ export function validateSnapshot(data: any): Snapshot {
       )
     )
       throw new Error('Invalid trip in backend response.');
-  if (
-    data.dispatch &&
-    (typeof data.dispatch.status !== 'string' ||
-      typeof data.dispatch.message !== 'string' ||
-      typeof data.dispatch.routingSource !== 'string')
-  )
-    throw new Error('Invalid dispatch status.');
-  for (const trip of data.trips)
-    if (
-      trip.etaMinute !== undefined &&
-      trip.etaMinute !== null &&
-      !Number.isFinite(trip.etaMinute)
-    )
-      throw new Error('Invalid backend ETA.');
   if (data.optimizationResults) {
     const result = data.optimizationResults;
     if (
@@ -106,25 +92,22 @@ export function createTransportClient(
   fetcher: typeof fetch,
   status: (state: ConnectionState, error?: string) => void,
 ) {
-  let connected = false;
   async function request(path: string, body?: Action | {}) {
-    if (!connected) status('connecting');
+    status('connecting');
     try {
       const response = await fetcher(`${base.replace(/\/$/, '')}${path}`, {
         method: body ? 'POST' : 'GET',
         headers: body ? { 'Content-Type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(10000),
       });
       if (!response.ok)
         throw new Error(`Backend request failed (${response.status}).`);
       const snapshot = validateSnapshot(await response.json());
-      if (!connected) status('connected');
-      connected = true;
+      status('connected');
       return snapshot;
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Backend unavailable';
-      connected = false;
       status('disconnected', message);
       throw e;
     }
