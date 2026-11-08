@@ -60,6 +60,7 @@ export function validateSnapshot(data: any): Snapshot {
     )
       throw new Error('Invalid vehicle in backend response.');
     ids.add(v.id);
+    if (v.activity !== undefined && typeof v.activity !== 'string') throw new Error('Invalid vehicle activity.');
     if (v.routePhase !== undefined && !['pickup','dropoff','stopped'].includes(v.routePhase))
       throw new Error('Invalid route phase.');
     if ((v.tripId !== undefined && !text(v.tripId)) ||
@@ -104,6 +105,15 @@ export function validateSnapshot(data: any): Snapshot {
   for (const t of data.trips) {
     if (t.vehicleId !== undefined && !['complete','cancelled'].includes(t.status) && !data.vehicles.some((v: any) => v.id === t.vehicleId && v.tripId === t.id))
       throw new Error('Inconsistent trip assignment.');
+  }
+  if (data.timeSavings !== undefined) {
+    const m = data.timeSavings;
+    if (!object(m) || !count(m.completedJobs) || !count(m.activeJobs) ||
+        !['baselineMinutesPerJob','completedJobMinutes','baselineTotalMinutes','activeJobMinutes'].every(k => Number.isFinite(m[k]) && m[k] >= 0) ||
+        !Number.isFinite(m.netMinutesSaved) ||
+        (m.averageJobMinutes !== null && (!Number.isFinite(m.averageJobMinutes) || m.averageJobMinutes < 0)) ||
+        !object(m.serviceMinutes) || !['loading','handoff','reset'].every(k => Number.isFinite(m.serviceMinutes[k]) && m.serviceMinutes[k] >= 0))
+      throw new Error('Invalid time savings metrics.');
   }
   if (data.integration !== undefined && (!object(data.integration) ||
       typeof data.integration.source !== 'string' ||

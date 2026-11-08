@@ -26,6 +26,9 @@ def road(start,end):
 
 class IntegrationTests(unittest.TestCase):
     def setUp(self):
+        self.timing_patch=patch.multiple('backend.services.transport_timing',LOAD_MINUTES=2.0,HANDOFF_MINUTES=2.0,RESET_MINUTES=0.0)
+        self.timing_patch.start()
+        self.addCleanup(self.timing_patch.stop)
         self.engine=create_engine('sqlite://',connect_args={'check_same_thread':False},poolclass=StaticPool)
         source_metadata.create_all(self.engine)
         storage_metadata.create_all(self.engine)
@@ -549,6 +552,99 @@ class IntegrationTests(unittest.TestCase):
         self.assertFalse(after['integration']['running'])
         self.assertTrue(any('Road routes could not be prepared' in e for e in after['events']))
         self.assertEqual(after['trips'][0]['vehicleId'],'AMB-1')
+
+
+    def test_planner_balances_twelve_feasible_calls_and_outage_preserves_them(self):
+        from collections import Counter
+        with self.sessions.begin() as db:
+            store=Store(db)
+            template=dict(store.source()[1][0])
+            for i in range(4,13):
+                trip={**template,'request_id':f'TR-{i}','patient_id':f'PAT-{i}',
+                      'pickup_time':NOW+timedelta(minutes=(i-1)*10)}
+                db.execute(insert(requests).values(**trip))
+            command(db,{'type':'optimize'})
+            trips=store.source()[1]
+            counts=Counter(t['ambulance_id'] for t in trips)
+            self.assertEqual(counts,{'AMB-1':6,'AMB-2':6})
+            command(db,{'type':'outage','vehicleId':'AMB-1'})
+            trips=store.source()[1]
+            self.assertEqual(len(trips),12)
+            self.assertTrue(all(t['status']=='scheduled' for t in trips))
+            self.assertTrue(all(t['ambulance_id']=='AMB-2' for t in trips))
+
+    def test_balancing_does_not_assign_ineligible_units(self):
+        with self.sessions.begin() as db:
+            store=Store(db)
+            store.update_source(ambulances,'ambulance_id','AMB-2',crew_count=0)
+            command(db,{'type':'optimize'})
+            self.assertTrue(all(t['ambulance_id']=='AMB-1' for t in store.source()[1]))
+
+    def test_balancing_does_not_sacrifice_pickup_punctuality(self):
+        with self.sessions.begin() as db:
+            store=Store(db)
+            # The idle second unit is too far away for the first two pickups.
+            def matrix(locations):
+                return [[0 if a==b else (3600 if a[0]>42.7015 and a[0]<42.703 else 60) for b in locations] for a in locations]
+            with patch('backend.services.transport_planner.get_time_matrix',side_effect=matrix):
+                command(db,{'type':'optimize'})
+            trips=store.source()[1]
+            self.assertEqual(trips[0]['ambulance_id'],'AMB-1')
+            self.assertEqual(trips[1]['ambulance_id'],'AMB-1')
+
+
+    def test_real_service_cycle_and_job_timer_exclude_idle_time(self):
+        with patch.multiple('backend.services.transport_timing',LOAD_MINUTES=15.0,HANDOFF_MINUTES=32.0,RESET_MINUTES=5.0):
+            with self.sessions.begin() as db:
+                store=Store(db)
+                def move(minutes):
+                    clock=store.clock();advance(store,clock,minutes);store.save_clock(clock)
+                    return snapshot(db)
+                idle=move(100)
+                self.assertEqual(idle['timeSavings']['activeJobMinutes'],0)
+                command(db,{'type':'assign','tripId':'TR-1','vehicleId':'AMB-1'})
+                self.assertEqual(store.all_plans()['TR-1']['body']['predictedAvailable'],154)
+                self.assertEqual(move(1)['vehicles'][0]['activity'],'Loading patient')
+                self.assertEqual(move(15)['trips'][0]['status'],'onboard')
+                self.assertEqual(move(1)['vehicles'][0]['activity'],'Handoff and paperwork')
+                self.assertEqual(move(32)['vehicles'][0]['activity'],'Resetting for next job')
+                s=move(5)
+                m=s['timeSavings']
+                self.assertEqual(m['completedJobs'],1)
+                self.assertEqual(m['completedJobMinutes'],54)
+                self.assertEqual(m['netMinutesSaved'],21)
+                self.assertEqual(m['activeJobMinutes'],0)
+                self.assertEqual(move(100)['timeSavings'],m)
+
+    def test_future_queue_wait_does_not_start_job_timer(self):
+        with self.sessions.begin() as db:
+            store=Store(db)
+            for t in store.source()[1]:
+                store.update_source(requests,'request_id',t['request_id'],pickup_time=NOW+timedelta(minutes=120))
+            command(db,{'type':'optimize'})
+            clock=store.clock();advance(store,clock,20);store.save_clock(clock)
+            m=snapshot(db)['timeSavings']
+            self.assertEqual(m['activeJobs'],0)
+            self.assertEqual(m['activeJobMinutes'],0)
+
+    def test_segment_timing_changes_speed_along_equal_length_roads(self):
+        route={'path':[[0,0],[0,1],[0,2]],'segmentDurationsSeconds':[90,10]}
+        p,i=location(route,.5)
+        self.assertEqual(i,0)
+        self.assertAlmostEqual(p[1],50/90)
+        p,i=location(route,.95)
+        self.assertEqual(i,1)
+        self.assertAlmostEqual(p[1],1.5)
+
+    def test_metrics_show_over_baseline_and_exclude_unknown_start(self):
+        from backend.services.transport_timing import metrics
+        rows={'a':{'body':{'stage':'complete','jobStarted':10,'jobEnded':100}},
+              'b':{'body':{'stage':'complete','jobEnded':100}},
+              'c':{'body':{'stage':'queued','stageStarted':200}}}
+        result=metrics(rows,150)
+        self.assertEqual(result['completedJobs'],1)
+        self.assertEqual(result['netMinutesSaved'],-15)
+        self.assertEqual(result['activeJobMinutes'],0)
 
 
 if __name__=='__main__': unittest.main()

@@ -134,3 +134,15 @@ The dashboard now has one pause control: **Pause backend simulation**. Snapshot 
 ## Automatic patient recovery after an outage
 
 Onboard patient transfers now select the fastest feasible free replacement using OSRM approach driving time. Eligibility, crew, capacity, holds, active trips and shift end are checked. The replacement drives to the stopped ambulance, preserves the original pickup record, then continues to the destination. Future reservations may be released and replanned, but active patient trips are never interrupted. A failed or infeasible recovery remains visibly awaiting transfer; Replan fleet schedule / Retry automatic replacement retries selection. Routing failure does not undo the recorded outage or a successful replacement assignment. This supersedes earlier references to requiring manual replacement selection.
+
+
+Fleet insertion scoring now minimizes added pickup lateness first, then active plus queued call count, then added OSRM driving time. Waiting time is excluded from the driving-cost tie-breaker. This avoids packing equally punctual trips onto a small number of units. Shift limits, service level, crew, capacity and active-trip protection still apply, so equal counts are not guaranteed when feasibility differs. An outage releases future assignments and replans them; patient requests are not cancelled or removed.
+
+
+## Road timing and 75-minute comparison
+
+OSRM routes request per-segment durations. Motion follows those durations (scaled to include the provider's total route time and turn costs), rather than uniform average speed over the whole path. These are profile-based travel estimates, not verified posted speed limits or live traffic. Providers omitting annotations retain a route-average fallback; malformed annotations are rejected.
+
+Service stages now use the user's assumptions: 15 minutes loading, 32 minutes handoff/paperwork and 5 minutes resetting. Scheduling and availability forecasts use the same durations. The `timeSavings` snapshot object compares fully measured completed jobs against 75 simulated minutes each. Job timing begins on assignment departure or queued-trip activation and ends when the unit becomes available. Idle time before/between jobs does not count. Delays and recovery time during a job do count; transfers retain the original job start. Active totals are separate; negative savings are shown as over baseline. Imported trips without a known start are excluded. Reset clears the measured run with the plans.
+
+After deploying, restart the worker and use Reset simulation then Replan fleet schedule to start a fresh comparison with the new service times and routes. Existing queued plans were calculated under the previous timing assumptions. Do not interpret savings against the supplied 75-minute assumption as a controlled optimization benchmark or measured clinical performance.

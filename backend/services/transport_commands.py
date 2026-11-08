@@ -80,6 +80,13 @@ def command(db,payload):
                 if t['ambulance_id']!=vid or t['status'] in ('completed','cancelled'): continue
                 row=rows.get(t['request_id'])
                 body=dict(row['body']) if row else {}
+                if body.get('stage')=='resetting':
+                    body.update(stage='complete',jobEnded=clock['minute'])
+                    body.pop('jobStarted',None)  # Interrupted reset is not a full measured cycle.
+                    row['body']=body
+                    store.save_plan(row)
+                    store.update_source(requests,'request_id',t['request_id'],status='completed')
+                    continue
                 onboard=t['status']=='transporting' or 'actualPickup' in body or 'transferLocation' in body
                 if onboard:
                     transfer_required=True

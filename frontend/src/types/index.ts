@@ -1,5 +1,6 @@
 export type Position = [number, number];
 export type Vehicle = {
+  activity?: string;
   route?: Position[];
   routePhase?: 'pickup' | 'dropoff' | 'stopped';
   routeIndex?: number;
@@ -67,7 +68,19 @@ export type DirectoryRequest = {
   booking_type: string;
   service_level: string;
 };
+export type TimeSavings = {
+  baselineMinutesPerJob: number;
+  completedJobs: number;
+  completedJobMinutes: number;
+  baselineTotalMinutes: number;
+  netMinutesSaved: number;
+  averageJobMinutes: number | null;
+  activeJobMinutes: number;
+  activeJobs: number;
+  serviceMinutes: { loading: number; handoff: number; reset: number };
+};
 export type Snapshot = {
+  timeSavings?: TimeSavings;
   integration?: {
     source: string;
     schemaReady: boolean;

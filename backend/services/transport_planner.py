@@ -7,7 +7,7 @@ from backend.services.osrm import get_road_route, get_time_matrix, RoutingError
 from backend.services.transport_snapshot import ACTIVE
 from backend.transport_store import Store, TransportError, utc, ambulances, requests
 
-SERVICE_MINUTES=2.0
+from backend.services import transport_timing as timing
 
 
 def eligible(v,t):
@@ -24,9 +24,9 @@ def route_plan(v,t,minute,reference,*,start=None,stage='pickup',factor=1):
     transport=get_road_route(pickup if stage!='onboard' else start,destination)
     scheduled=(utc(t['pickup_time'])-utc(reference)).total_seconds()/60
     pickup_at=max(minute+(approach['durationSeconds']/60*factor if approach else 0),scheduled)
-    return {'stage':stage,'stageStarted':minute,'routeIndex':0,'approach':approach,'transport':transport,
+    return {'timingVersion':1,'stage':stage,'stageStarted':minute,'routeIndex':0,'approach':approach,'transport':transport,
         'eta':(minute+transport['durationSeconds']/60*factor if stage=='onboard' else pickup_at),
-        'predictedAvailable':(minute if stage=='onboard' else pickup_at+SERVICE_MINUTES)+transport['durationSeconds']/60*factor+SERVICE_MINUTES}
+        'predictedAvailable':(minute if stage=='onboard' else pickup_at+timing.LOAD_MINUTES)+transport['durationSeconds']/60*factor+timing.HANDOFF_MINUTES+timing.RESET_MINUTES}
 
 
 def prepare_active(store,clock,units,trips):
@@ -36,8 +36,8 @@ def prepare_active(store,clock,units,trips):
     for t in trips:
         if t['status'] not in ACTIVE or not t['ambulance_id']: continue
         prior=existing.get(t['request_id'])
-        compatible_stages=('onboard','unloading') if t['status']=='transporting' else ('pickup','loading')
-        if prior and prior['vehicle_id']==t['ambulance_id'] and prior['body'].get('stage') in compatible_stages: continue
+        compatible_stages=('onboard','unloading','resetting') if t['status']=='transporting' else ('pickup','loading')
+        if prior and prior['vehicle_id']==t['ambulance_id'] and prior['body'].get('stage') in compatible_stages and prior['body'].get('timingVersion')==1: continue
         stage='onboard' if t['status']=='transporting' else 'pickup'
         body=route_plan(by_unit[t['ambulance_id']],t,clock['minute'],clock['reference_at'],stage=stage,factor=factor)
         remaining_hold=max(0,store.holds().get(t['ambulance_id'],{}).get('hold_until',0)-clock['minute'])
@@ -70,6 +70,8 @@ def assign(store,clock,trip_id,vehicle_id):
         if not location: raise TransportError('Transfer location has not been recorded.')
         target.update(pickup_lat=location[0],pickup_lng=location[1],pickup_time=clock['reference_at'])
     body=route_plan(v,target,clock['minute'],clock['reference_at'],factor=2 if clock['traffic'] else 1)
+    if t['status']!='transfer': body['jobStarted']=clock['minute']
+    elif 'jobStarted' in prior: body['jobStarted']=prior['jobStarted']
     if t['status']=='transfer':
         body['transferLocation']=location
         if 'actualPickup' in prior: body['actualPickup']=prior['actualPickup']
@@ -151,6 +153,7 @@ def optimize(store,clock,*,recover=True):
         value=matrix[index[tuple(a)]][index[tuple(b)]]
         return None if value is None else value/60*factor
     schedules={v['ambulance_id']:[] for v in usable}
+    active_load={v['ambulance_id']:sum(t['status'] in ACTIVE and t['ambulance_id']==v['ambulance_id'] for t in trips) for v in usable}
     base={v['ambulance_id']:([v['current_lat'],v['current_lng']], max(clock['minute'],store.holds().get(v['ambulance_id'],{}).get('hold_until',0))) for v in usable}
     for t in trips:
         if t['status'] in ACTIVE and t['ambulance_id'] in base:
@@ -161,6 +164,7 @@ def optimize(store,clock,*,recover=True):
         start,available=base[v['ambulance_id']]
         shift_end=(utc(v['shift_end_at'])-utc(clock['reference_at'])).total_seconds()/60
         lateness=0
+        driving=0
         result=[]
         for t in sequence:
             if not eligible(v,t): return None
@@ -171,14 +175,16 @@ def optimize(store,clock,*,recover=True):
             if approach is None or transport is None: return None
             scheduled=(utc(t['pickup_time'])-utc(clock['reference_at'])).total_seconds()/60
             at=max(available+approach,scheduled)
-            finish=at+SERVICE_MINUTES+transport+SERVICE_MINUTES
+            finish=at+timing.LOAD_MINUTES+transport+timing.HANDOFF_MINUTES+timing.RESET_MINUTES
             if finish>shift_end: return None
             result.append((t,v,start,available,at,finish))
             lateness+=max(0,at-scheduled)
+            driving+=approach+transport
             start,available=destination,finish
-        return lateness,available,result
+        return lateness,available,result,driving
 
-    # Try every feasible insertion; minimize the increase in predicted lateness.
+    # Prioritize punctuality, then distribute queued/active calls across eligible units.
+    # Driving-time cost excludes waiting, which previously rewarded packing long queues.
     for t in sorted(pending,key=lambda t:(utc(t['pickup_time']),t['request_id'])):
         choices=[]
         for v in usable:
@@ -189,8 +195,9 @@ def optimize(store,clock,*,recover=True):
                 candidate=sequence[:position]+[t]+sequence[position:]
                 evaluated=evaluate(v,candidate)
                 if evaluated is None: continue
-                late,finish,_=evaluated
-                choices.append(((late-previous[0],finish-previous[1],v['ambulance_id'],position),v['ambulance_id'],candidate))
+                late,finish,_,driving=evaluated
+                load=len(sequence)+active_load[v['ambulance_id']]
+                choices.append(((round(late-previous[0],6),load,driving-previous[3],finish,v['ambulance_id'],position),v['ambulance_id'],candidate))
         if choices:
             _,vid,candidate=min(choices,key=lambda item:item[0])
             schedules[vid]=candidate
@@ -214,7 +221,7 @@ def optimize(store,clock,*,recover=True):
             store.event(clock['minute'],f'{t["request_id"]} '+(f'scheduled on {new} by greedy road-time planning.' if new else 'requires a new feasible ambulance assignment.'),'assignment',t['request_id'],old,new)
     for _,row in prepared:
         store.save_plan(row)
-    store.event(clock['minute'],'Fleet schedule recalculated using OSRM driving times; heuristic results, not guaranteed optimal.')
+    store.event(clock['minute'],'Fleet schedule recalculated: pickup punctuality first, then balanced active/queued call counts and OSRM driving time; heuristic results, not guaranteed optimal.')
 
 
 def reflow_queue(store,clock):
@@ -236,7 +243,7 @@ def reflow_queue(store,clock):
             body=dict(row['body'])
             scheduled=(utc(t['pickup_time'])-utc(clock['reference_at'])).total_seconds()/60
             eta=max(available+body['approach']['durationSeconds']/60*factor,scheduled)
-            finish=eta+SERVICE_MINUTES+body['transport']['durationSeconds']/60*factor+SERVICE_MINUTES
+            finish=eta+timing.LOAD_MINUTES+body['transport']['durationSeconds']/60*factor+timing.HANDOFF_MINUTES+timing.RESET_MINUTES
             body.update(stageStarted=max(available,eta-body['approach']['durationSeconds']/60*factor),eta=eta,predictedAvailable=finish)
             row['body']=body;store.save_plan(row)
             available=finish

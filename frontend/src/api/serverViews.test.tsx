@@ -1,3 +1,4 @@
+import TimeSavings from '../components/TimeSavings';
 import { test } from 'node:test';
 
 import assert from 'node:assert/strict';
@@ -222,4 +223,13 @@ test('reset is available only when the backend advertises a saved baseline', () 
   s.supportedActions=['reset'];
   assert.match(render(), /<button>Reset simulation/);
   assert.doesNotMatch(render(), /Confirm reset/);
+});
+
+test('time savings shows backend totals and preserves over-baseline results', () => {
+  const metrics={baselineMinutesPerJob:75,completedJobs:1,completedJobMinutes:90,baselineTotalMinutes:75,netMinutesSaved:-15,averageJobMinutes:90,activeJobMinutes:0,activeJobs:0,serviceMinutes:{loading:15,handoff:32,reset:5}};
+  const html=renderToStaticMarkup(<TimeSavings metrics={metrics} />);
+  assert.match(html,/15.0 min over baseline/);
+  assert.match(html,/Idle time between jobs is excluded/);
+  metrics.completedJobs=0;metrics.averageJobMinutes=null as any;
+  assert.match(renderToStaticMarkup(<TimeSavings metrics={metrics} />),/No completed timed jobs yet/);
 });

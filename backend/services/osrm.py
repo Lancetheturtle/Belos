@@ -54,7 +54,7 @@ def get_road_route(start,end):
             # Callers persist/modify their own copy, never the shared cache.
             import copy
             return copy.deepcopy(cached[1])
-    data=_request('route',[start,end],overview='full',geometries='geojson',steps='false')
+    data=_request('route',[start,end],overview='full',geometries='geojson',steps='false',annotations='duration,distance,speed')
     try:
         route=data['routes'][0]
         coordinates=route['geometry']['coordinates']
@@ -62,7 +62,19 @@ def get_road_route(start,end):
             raise ValueError()
         path=[list(_point((p[1],p[0]))) for p in coordinates if len(p)==2]
         if len(path)!=len(coordinates): raise ValueError()
-        result={'path':path,'durationSeconds':route['duration'],'distanceMeters':route['distance']}
+        result={'path':path,'durationSeconds':route['duration'],'distanceMeters':route['distance'],
+                'timingSource':'route-average'}
+        durations=[value for leg in route.get('legs',[]) for value in leg.get('annotation',{}).get('duration',[])]
+        if durations:
+            if len(durations)!=len(path)-1 or not all(_number(n) for n in durations):
+                raise ValueError()
+            total=sum(durations)
+            if total>0:
+                # Include aggregate turn costs while retaining per-segment speed variation.
+                scale=route['duration']/total
+                result['segmentDurationsSeconds']=[n*scale for n in durations]
+                result['timingSource']='OSRM-segment-estimates'
+
     except (KeyError,IndexError,TypeError,ValueError) as exc:
         raise RoutingError('Road-routing service returned invalid geometry.') from exc
     with _lock:

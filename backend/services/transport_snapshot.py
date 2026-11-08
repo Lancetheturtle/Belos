@@ -69,7 +69,8 @@ def snapshot(db):
             if plan_rows.get(active[vid],{}).get('vehicle_id') != vid:
                 route = None
             stage = plan.get('stage')
-            if stage in ('loading','unloading'):
+            if stage in ('loading','unloading','resetting'):
+                result['activity']={'loading':'Loading patient','unloading':'Handoff and paperwork','resetting':'Resetting for next job'}[stage]
                 result['routePhase'] = 'stopped'
             elif route and stage in ('pickup','onboard'):
                 # Only publish the untravelled road; progress is owned by the backend.
@@ -126,12 +127,13 @@ def snapshot(db):
             assignment_history.append(item)
     from backend.services.transport_reset import baseline
     reset_actions = ['reset'] if ready and baseline(db) is not None else []
-    return {'minute':clock['minute'],'traffic':clock['traffic'],'vehicles':vehicles,'trips':trips,
+    from backend.services.transport_timing import metrics
+    return {'timeSavings':metrics(plan_rows,clock['minute']), 'minute':clock['minute'],'traffic':clock['traffic'],'vehicles':vehicles,'trips':trips,
         'events':[h['reason'] for h in history[-100:]][::-1], 'assignmentHistory':assignment_history,
         'directory':{'ambulances':directory_units,'transport_requests':directory_requests},
         'supportedActions':['assign','optimize','routes','outage','restore','delay','traffic','simulation'] + reset_actions if ready else [],
         'integration':{'source':'Tiger Data','schemaReady':ready,'running':clock['running'],
             'simulationSpeed':clock['speed'],'referenceAt':reference.isoformat(),
             'workerConnected':bool(clock.get('worker_at') and (datetime.now(timezone.utc)-utc(clock['worker_at'])).total_seconds()<10),
-            'routing':'OSRM driving estimates; simulated traffic adjustment'},
+            'routing':'OSRM estimated road-segment travel times, not verified posted speed limits; simulated traffic adjustment'},
     }

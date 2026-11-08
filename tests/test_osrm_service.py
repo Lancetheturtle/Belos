@@ -46,4 +46,19 @@ class OsrmTests(unittest.TestCase):
             self.assertEqual(osrm.get_time_matrix([[42,-73],[42,-73]]),[[0,0],[0,0]])
             self.assertEqual(osrm.get_road_route([42,-73],[42,-73])['durationSeconds'],0)
 
+
+    def test_segment_annotations_align_to_geometry_and_include_total_turn_time(self):
+        payload={'code':'Ok','routes':[{'duration':120,'distance':1000,
+            'geometry':{'coordinates':[[-73,42],[-73.1,42.1],[-73.2,42.2]]},
+            'legs':[{'annotation':{'duration':[90,10]}}]}]}
+        with patch.object(osrm.requests,'get',return_value=self.response(payload)) as get:
+            route=osrm.get_road_route([42,-73],[42.2,-73.2])
+            self.assertEqual(get.call_args.kwargs['params']['annotations'],'duration,distance,speed')
+            self.assertEqual(route['segmentDurationsSeconds'],[108,12])
+            self.assertEqual(route['timingSource'],'OSRM-segment-estimates')
+        osrm._cache.clear()
+        payload['routes'][0]['legs'][0]['annotation']['duration']=[90]
+        with patch.object(osrm.requests,'get',return_value=self.response(payload)):
+            with self.assertRaises(osrm.RoutingError): osrm.get_road_route([42,-73],[42.2,-73.2])
+
 if __name__=='__main__':unittest.main()

@@ -54,7 +54,7 @@ export default function VehicleDetails({
             : held
               ? `${v.holdReason} until ${clock(v.holdUntil)}`
               : vehicleTrip
-                ? statusLabel(vehicleTrip)
+                ? (v.activity ?? statusLabel(vehicleTrip))
                 : 'Available for transport'}
         </div>
         {vehicleTrip && (

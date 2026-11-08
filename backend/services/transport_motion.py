@@ -2,7 +2,8 @@
 import math
 from datetime import timedelta
 from backend.services.transport_snapshot import ACTIVE
-from backend.services.transport_planner import SERVICE_MINUTES, prepare_active
+from backend.services.transport_planner import prepare_active
+from backend.services import transport_timing as timing
 from backend.transport_store import ambulances, requests, utc
 
 
@@ -12,6 +13,9 @@ def location(route,progress):
     for a,b in zip(path,path[1:]):
         lat=math.radians((a[0]+b[0])/2)
         lengths.append(math.hypot(b[0]-a[0],(b[1]-a[1])*math.cos(lat)))
+    segments=route.get('segmentDurationsSeconds')
+    if segments is not None and len(segments)==len(path)-1 and sum(segments)>0:
+        lengths=segments
     total=sum(lengths)
     if total==0 or progress>=1: return path[-1],len(path)-1
     left=total*max(0,progress)
@@ -50,7 +54,7 @@ def advance(store,clock,minutes):
                 if t['ambulance_id']!=vid or t['status']!='scheduled': continue
                 cursor=max(cursor,body['stageStarted'],holds.get(vid,{}).get('hold_until',0))
                 if cursor>=end: break
-                body.update(stage='pickup',stageStarted=cursor,routeIndex=0)
+                body.update(stage='pickup',stageStarted=cursor,routeIndex=0,jobStarted=cursor)
                 store.update_source(requests,'request_id',t['request_id'],status='en_route_to_pickup')
                 t['status']='en_route_to_pickup'
                 store.update_source(ambulances,'ambulance_id',vid,status='en_route_to_pickup')
@@ -62,9 +66,9 @@ def advance(store,clock,minutes):
                 body['stageStarted']+=paused
                 cursor+=paused
             completed=False
-            for _ in range(5):
+            for _ in range(6):
                 stage=body['stage']
-                if cursor>=end: break
+                if cursor>=end and not (stage=='resetting' and timing.RESET_MINUTES==0): break
                 if stage in ('pickup','onboard'):
                     route=body['approach'] if stage=='pickup' else body['transport']
                     duration=route['durationSeconds']/60*factor
@@ -77,7 +81,7 @@ def advance(store,clock,minutes):
                         scheduled=(utc(t['pickup_time'])-utc(clock['reference_at'])).total_seconds()/60
                         pickup_at=max(arrival,scheduled) if not body.get('transferLocation') else arrival
                         body['eta']=pickup_at
-                        body['predictedAvailable']=pickup_at+SERVICE_MINUTES+body['transport']['durationSeconds']/60*factor+SERVICE_MINUTES
+                        body['predictedAvailable']=pickup_at+timing.LOAD_MINUTES+body['transport']['durationSeconds']/60*factor+timing.HANDOFF_MINUTES+timing.RESET_MINUTES
                         if end<pickup_at:
                             if end>=arrival:
                                 store.update_source(requests,'request_id',t['request_id'],status='at_pickup')
@@ -90,12 +94,12 @@ def advance(store,clock,minutes):
                         cursor=pickup_at
                     else:
                         body['eta']=arrival
-                        body['predictedAvailable']=arrival+SERVICE_MINUTES
+                        body['predictedAvailable']=arrival+timing.HANDOFF_MINUTES+timing.RESET_MINUTES
                         if end<arrival: break
                         body.update(stage='unloading',stageStarted=arrival,completedAt=arrival)
                         cursor=arrival
                 elif stage=='loading':
-                    departure=body['stageStarted']+SERVICE_MINUTES
+                    departure=body['stageStarted']+timing.LOAD_MINUTES
                     if end<departure: break
                     body.update(stage='onboard',stageStarted=departure,routeIndex=0)
                     body.pop('transferLocation',None)
@@ -104,9 +108,15 @@ def advance(store,clock,minutes):
                     t['status']='transporting'
                     cursor=departure
                 elif stage=='unloading':
-                    available=body['stageStarted']+SERVICE_MINUTES
+                    handoff=body['stageStarted']+timing.HANDOFF_MINUTES
+                    if end<handoff: break
+                    body.update(stage='resetting',stageStarted=handoff)
+                    cursor=handoff
+                elif stage=='resetting':
+                    available=body['stageStarted']+timing.RESET_MINUTES
                     if end<available: break
                     body['stage']='complete'
+                    body['jobEnded']=available
                     store.update_source(requests,'request_id',t['request_id'],status='completed')
                     store.update_source(ambulances,'ambulance_id',vid,status='available')
                     store.event(available,f'{t["request_id"]} completed by {vid}.')
@@ -144,9 +154,9 @@ def change_traffic(store,clock,enabled):
             if body['stage']=='pickup':
                 scheduled=(utc(by_trip[row['trip_id']]['pickup_time'])-utc(clock['reference_at'])).total_seconds()/60
                 eta=max(eta,scheduled)
-                body['predictedAvailable']=eta+SERVICE_MINUTES+body['transport']['durationSeconds']/60*new_factor+SERVICE_MINUTES
+                body['predictedAvailable']=eta+timing.LOAD_MINUTES+body['transport']['durationSeconds']/60*new_factor+timing.HANDOFF_MINUTES+timing.RESET_MINUTES
             else:
-                body['predictedAvailable']=eta+SERVICE_MINUTES
+                body['predictedAvailable']=eta+timing.HANDOFF_MINUTES+timing.RESET_MINUTES
             body['eta']=eta
             row['body']=body
             store.save_plan(row)

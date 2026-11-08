@@ -14,6 +14,7 @@ import TransportSchedule from '../components/TransportSchedule';
 import ConnectionStatus from '../components/ConnectionStatus';
 import OptimizationResults from '../components/OptimizationResults';
 import BackendControls from '../components/BackendControls';
+import TimeSavings from '../components/TimeSavings';
 import DispatchVisibility from '../components/DispatchVisibility';
 export default function Dashboard() {
   const [s, setS] = useState<Snapshot | null>(null),
@@ -250,6 +251,7 @@ export default function Dashboard() {
               hidden={panel !== 'live'}
             >
               <BackendControls snapshot={s} busy={actionsBusy} onAction={act} />
+              <TimeSavings metrics={s.timeSavings} />
               {missingRoutes.length > 0 && (
                 <div className="route-warning" role="status">
                   Road routes missing for{' '}
