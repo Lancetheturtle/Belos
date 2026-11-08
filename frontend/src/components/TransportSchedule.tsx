@@ -19,7 +19,7 @@ export default function TransportSchedule({
   onAction: act,
 }: Props) {
   const pending = s.trips.filter((t) =>
-    ['waiting', 'transfer'].includes(t.status),
+    ['waiting', 'transfer'].includes(t.status) && !t.plannedVehicleId,
   );
   return (
     <details className="drawer schedule">
@@ -73,17 +73,19 @@ export default function TransportSchedule({
                   )}
                 </div>
                 <div className="trip-bottom">
-                  {['waiting', 'transfer'].includes(t.status) ? (
+                  {t.plannedVehicleId ? (
+                    <span>Scheduled on {t.plannedVehicleId} · Queue {t.plannedSequence} · Pickup ETA {arrival === null ? '—' : clock(arrival)}</span>
+                  ) : ['waiting', 'transfer'].includes(t.status) ? (
                     <ReassignTrip
                       trip={t}
-                      available={available}
+                      available={t.status === 'transfer' ? s.vehicles.filter(v => !v.outOfService && !v.tripId && v.holdUntil <= s.minute) : available}
                       busy={busy || !canAct(s, 'assign')}
                       onAction={act}
                     />
                   ) : (
                     <span>
                       {t.vehicleId} <span className="separator">·</span>{' '}
-                      {t.status === 'complete'
+                      {t.status === 'cancelled' ? 'Cancelled' : t.status === 'complete'
                         ? `Delivered ${t.completedAt === undefined ? '—' : clock(t.completedAt)}`
                         : `${t.status === 'onboard' ? 'Drop-off' : t.transferLocation ? 'Transfer' : 'Pickup'} ETA ${arrival === null ? '—' : clock(arrival)}`}
                     </span>

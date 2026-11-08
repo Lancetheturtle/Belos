@@ -3,7 +3,8 @@ import { Ambulance, Users } from 'lucide-react';
 import type { TransportDirectory } from '../types';
 
 const labels: Record<string, string> = {
-  scheduled: 'Needs pickup · Unassigned',
+  scheduled: 'Scheduled pickup',
+  transfer: 'Needs transfer · Replacement required',
   assigned: 'Needs pickup · Unit assigned',
   en_route_to_pickup: 'Ambulance heading to pickup',
   at_pickup: 'Ambulance at pickup',
@@ -35,6 +36,7 @@ const pickupStatuses = new Set([
   'assigned',
   'en_route_to_pickup',
   'at_pickup',
+  'transfer',
 ]);
 export default function PatientTransports({
   data,
@@ -148,7 +150,7 @@ export default function PatientTransports({
                 ? t.dropoff_location
                 : t.status === 'transporting'
                   ? (unit?.current_location ?? 'Location unavailable')
-                  : t.status === 'cancelled'
+                  : t.status === 'transfer' ? 'Waiting at stopped ambulance; see live transport map' : t.status === 'cancelled'
                     ? 'Not tracked'
                     : t.pickup_location;
             return (

@@ -10,7 +10,7 @@ const object = (value: any) => value !== null && typeof value === 'object' && !A
 const text = (value: unknown) => typeof value === 'string' && value.trim().length > 0;
 const date = (value: unknown) => text(value) && /(?:Z|[+-]\d{2}:\d{2})$/.test(value as string) && Number.isFinite(Date.parse(value as string));
 const count = (value: unknown) => Number.isInteger(value) && (value as number) >= 0;
-const actionTypes = ['assign'];
+const actionTypes = ['assign','optimize','routes','outage','restore','delay','traffic','simulation','reset'];
 export function validateDirectory(data: any): TransportDirectory {
   if (!object(data) || !Array.isArray(data.ambulances) || !Array.isArray(data.transport_requests))
     throw new Error('Invalid transport directory.');
@@ -26,7 +26,7 @@ export function validateDirectory(data: any): TransportDirectory {
   const requests = new Set<string>();
   for (const t of data.transport_requests) {
     if (!object(t) || !['request_id', 'patient_id', 'pickup_location', 'pickup_address', 'dropoff_location', 'dropoff_address', 'transport_type', 'mobility', 'booking_type', 'service_level'].every(k => text(t[k])) ||
-      !['scheduled', 'assigned', 'en_route_to_pickup', 'at_pickup', 'transporting', 'completed', 'cancelled'].includes(t.status) ||
+      !['scheduled', 'assigned', 'en_route_to_pickup', 'at_pickup', 'transporting', 'completed', 'cancelled', 'transfer'].includes(t.status) ||
       requests.has(t.request_id) || !point([t.pickup_lat, t.pickup_lng]) || !point([t.dropoff_lat, t.dropoff_lng]) ||
       !date(t.pickup_time) || !Number.isFinite(t.planned_duration_minutes) || t.planned_duration_minutes < 0 ||
       (t.ambulance_id !== null && t.ambulance_id !== '' && (!text(t.ambulance_id) || !units.has(t.ambulance_id))))
@@ -60,6 +60,8 @@ export function validateSnapshot(data: any): Snapshot {
     )
       throw new Error('Invalid vehicle in backend response.');
     ids.add(v.id);
+    if (v.routePhase !== undefined && !['pickup','dropoff','stopped'].includes(v.routePhase))
+      throw new Error('Invalid route phase.');
     if ((v.tripId !== undefined && !text(v.tripId)) ||
         (v.routeIndex !== undefined && (!count(v.routeIndex) || !v.route || v.routeIndex >= v.route.length)) ||
         (v.movementPath !== undefined && (!Array.isArray(v.movementPath) || !v.movementPath.every(point))) ||
@@ -81,13 +83,15 @@ export function validateSnapshot(data: any): Snapshot {
       !point(t.pickup) ||
       !point(t.destination) ||
       !Number.isFinite(t.scheduled) ||
-      !['waiting', 'pickup', 'onboard', 'transfer', 'complete'].includes(
+      !['waiting', 'pickup', 'onboard', 'transfer', 'complete', 'cancelled'].includes(
         t.status,
       )
     )
       throw new Error('Invalid trip in backend response.');
     tripIds.add(t.id);
-    if ((t.vehicleId !== undefined && !ids.has(t.vehicleId)) ||
+    if ((t.plannedVehicleId !== undefined && !ids.has(t.plannedVehicleId)) ||
+        (t.plannedSequence !== undefined && !count(t.plannedSequence)) ||
+        (t.vehicleId !== undefined && !ids.has(t.vehicleId)) ||
         ['eta', 'actualPickup', 'completedAt'].some(k => t[k] !== undefined && !Number.isFinite(t[k])) ||
         (t.transferLocation !== undefined && !point(t.transferLocation)) ||
         (t.transportRoute !== undefined && (!Array.isArray(t.transportRoute) || !t.transportRoute.every(point))))
@@ -98,9 +102,15 @@ export function validateSnapshot(data: any): Snapshot {
       throw new Error('Inconsistent vehicle assignment.');
   }
   for (const t of data.trips) {
-    if (t.vehicleId !== undefined && t.status !== 'complete' && !data.vehicles.some((v: any) => v.id === t.vehicleId && v.tripId === t.id))
+    if (t.vehicleId !== undefined && !['complete','cancelled'].includes(t.status) && !data.vehicles.some((v: any) => v.id === t.vehicleId && v.tripId === t.id))
       throw new Error('Inconsistent trip assignment.');
   }
+  if (data.integration !== undefined && (!object(data.integration) ||
+      typeof data.integration.source !== 'string' ||
+      !['schemaReady','running','workerConnected'].every(k => typeof data.integration[k] === 'boolean') ||
+      !Number.isFinite(data.integration.simulationSpeed) || data.integration.simulationSpeed <= 0 ||
+      !date(data.integration.referenceAt) || typeof data.integration.routing !== 'string'))
+    throw new Error('Invalid server simulation metadata.');
   if (data.directory !== undefined) validateDirectory(data.directory);
   if (data.supportedActions !== undefined && (!Array.isArray(data.supportedActions) || !data.supportedActions.every((a: unknown) => actionTypes.includes(a as string))))
     throw new Error('Invalid supported actions.');
@@ -148,8 +158,10 @@ export function createTransportClient(
   fetcher: typeof fetch,
   status: (state: ConnectionState, error?: string) => void,
 ) {
+  let connected = false;
   async function request(path: string, body?: Action) {
-    status('connecting');
+    // Refreshing a healthy connection is not a reconnect.
+    if (!connected) status('connecting');
     try {
       const response = await fetcher(`${base.replace(/\/$/, '')}${path}`, {
         method: body ? 'POST' : 'GET',
@@ -157,15 +169,17 @@ export function createTransportClient(
         body: body ? JSON.stringify(body) : undefined,
         cache: 'no-store',
         credentials: 'same-origin',
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(body ? 120000 : 10000),
       });
       if (!response.ok)
         throw new Error(`Transport API request failed (${response.status}) at ${path}.`);
       const snapshot = validateSnapshot(await response.json());
+      connected = true;
       status('connected');
       return snapshot;
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Backend unavailable';
+      connected = false;
       status('disconnected', message);
       throw e;
     }
@@ -174,7 +188,7 @@ export function createTransportClient(
     load: () => request('/transport/state'),
     act: (s: Snapshot, a: Action) => {
       if (!s.supportedActions?.includes(a.type)) return Promise.reject(new Error('This action is not supported by the server.'));
-      return request('/transport/action', a);
+      return request('/transport/commands', a);
     },
   };
 }

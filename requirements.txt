@@ -1,4 +1,7 @@
-fastapi>=0.100.0
-uvicorn
-sqlalchemy
-pydantic
+fastapi>=0.100.0,<1
+uvicorn>=0.30,<1
+sqlalchemy>=2,<3
+pydantic>=2,<3
+psycopg[binary]>=3.2,<4
+requests>=2.32,<3
+tzdata>=2024.1

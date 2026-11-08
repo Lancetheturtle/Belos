@@ -18,6 +18,7 @@ export const client = createTransportClient(
   import.meta.env?.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000',
   (...args) => fetch(...args),
   (state, error) => {
+    if (connection.state === state && connection.error === error) return;
     connection = { state, error };
     listeners.forEach((fn) => fn());
   },

@@ -1,47 +1,38 @@
-# Frontend API contract for Tiger Data
+# Frontend / Tiger Data API contract
 
-This is a frontend handoff, not a backend implementation. All changes for this preparation are inside `frontend/`.
+The source tables are `ambulances` (15 existing records at verification) and `transport_requests` (60 existing records). The API reads them directly and preserves their IDs. The original backend ORM tables and legacy services are retained. Five additive `belos_transport_*` tables persist the shared clock, plans/geometry, holds, events and position history.
 
-## Current backend gaps (read-only inspection)
+## Reads
 
-The checked-in `backend/main.py` has no `GET /transport/state`, reassigns `app = FastAPI()` after defining transport routes, and accepts an action shape different from the frontend contract. Its action handler currently advances time rather than implementing manual assignment. `backend/simulation.py` returns vehicle `lat/lng/status/trip_id` and trip coordinate objects, missing required schedule, label, crew, traffic and hold fields. Those responses are intentionally not coerced into invented dispatch information. The directory/table records are not currently exposed through the expected state response.
+`GET /transport/state` returns a `Snapshot` as defined in `src/types/index.ts`. `/transport/snapshot` aliases it. Required fields: finite `minute`, boolean `traffic`, `vehicles`, `trips`, string-array `events`. Reads do not mutate or advance the simulation. Empty arrays are valid. Positions and geometry use `[latitude, longitude]`; OSRM conversion happens in Python.
 
-Therefore the frontend is prepared for integration, but cannot be described as connected to Tiger Data yet. No database connection or backend startup was attempted. The backend owner must expose the read contract below (or adapt the HTTP boundary once a final API contract is agreed).
+A vehicle includes `id`, `crew`, `position`, `outOfService`, `holdUntil`, `holdReason`, optional `tripId`, `route`, `routeIndex`. Trips include `id`, `from`, `to`, `pickup`, `destination`, `scheduled`, `status`, optional `vehicleId`, `eta`, `actualPickup`, `completedAt`, `transferLocation`, `transportRoute`, `plannedVehicleId`, `plannedSequence`. Active references must agree on both sides. Completed requests may retain their historical unit ID. Queued assignments appear as waiting trips with `plannedVehicleId` until the worker activates them.
 
-## Read and refresh
+`minute`, `scheduled`, holds, actual pickup/completion and ETA use minutes relative to `integration.referenceAt`: 09:00 America/New_York on the earliest dataset date. The recorded clock is initialized from existing ambulance location-update timestamps. The worker advances it independently; API reads never do. Raw directory timestamps remain timezone-aware ISO strings, with dates retained across midnight.
 
-`GET {VITE_API_BASE_URL}/transport/state` returns one complete `Snapshot` (see `src/types/index.ts`). Reads must not mutate, seed, reset or advance database state. The frontend has no reset or advance-time request. Polling reads state; the backend must advance its simulation independently. All POST action responses must use the same snapshot schema.
+Directory request statuses map to dispatch statuses: scheduled -> waiting; assigned/en_route_to_pickup/at_pickup -> pickup; transporting -> onboard; completed -> complete; cancelled -> cancelled; transfer -> transfer. The source directory preserves its native status names. A transfer keeps the patient at the stopped vehicle location until explicitly assigned a replacement.
 
-Required fields:
+`directory` contains full `ambulances` and `transport_requests` projections using the explicit `DirectoryAmbulance` and `DirectoryRequest` types. Null/empty ambulance IDs mean unassigned. IDs are unique, and referenced units must exist. No pagination, renumbering, invented patient records, or replacement demo data is used.
 
-- `minute`: finite minutes relative to the shift's 09:00 reference, as used by the existing UI.
-- `traffic`: boolean.
-- `vehicles`: array of unique `id`, `crew`, `position: [latitude, longitude]`, `outOfService`, `holdUntil`, `holdReason`, optional `tripId`.
-- `trips`: array of unique `id`, `from`, `to`, `pickup` and `destination` coordinate tuples, `scheduled` minute, `status` (`waiting`, `pickup`, `onboard`, `transfer`, `complete`), optional `vehicleId`, `actualPickup`, `completedAt`, `transferLocation`, `eta`.
-- `events`: array of strings, newest first.
+Optional `assignmentHistory` is authoritative backend history. `optimizationResults` is reserved for measured paired-run comparisons; no example numbers are substituted. `integration` includes `source`, `schemaReady`, `running`, `workerConnected`, `simulationSpeed`, `referenceAt` and `routing` description. `supportedActions` lists available commands and is empty before extension initialization.
 
-Empty arrays are valid. Vehicle and active trip assignment references must agree. Optional `eta` is the server's arrival minute (pickup/transfer for pickup trips, dropoff for onboard trips). The browser does not calculate live travel estimates. All numeric values must be JSON numbers, including PostgreSQL numeric columns serialized by the HTTP service.
+## Writes
 
-Optional route fields: vehicle `route`, `routeIndex`, `movementPath`, `unloadingUntil`; trip `transportRoute`. All geometry is `[latitude, longitude]`, not GeoJSON longitude-first order. See the canonical types. The frontend plots exact server coordinates without interpolation, extrapolation or external route generation.
+The frontend uses `POST /transport/commands`, not the preserved legacy `/transport/action`. Payloads:
 
-## Patient directory
+```json
+{"type":"assign","tripId":"<database request id>","vehicleId":"<database ambulance id>"}
+{"type":"routes"}
+{"type":"optimize"}
+{"type":"delay","vehicleId":"<id>","minutes":10}
+{"type":"outage","vehicleId":"<id>"}
+{"type":"restore","vehicleId":"<id>"}
+{"type":"traffic","enabled":true}
+{"type":"simulation","running":true,"speed":15}
+```
 
-Return optional `directory: { ambulances: [...], transport_requests: [...] }` in the same response so the patient list and map overlay refresh together. The snake_case fields match the supplied dataset. `src/types/index.ts` contains the explicit `DirectoryAmbulance` and `DirectoryRequest` schemas. No runtime fixture dataset remains in the frontend.
+Each successful write returns the complete updated snapshot. Invalid commands/records return 422; missing records 404; conflicts 409; routing failures 502; unavailable database or missing extension initialization 503. The browser performs no optimistic dispatch mutation. Simulation running/speed flags affect the separate Python worker, not the browser clock.
 
-Ambulances require original `ambulance_id`, `unit_name`, `current_location`, `current_lat`, `current_lng`, `status`, `crew_count`, `stretcher_capacity`, `service_level`, `last_location_update_at`, `shift_end_at`.
+`GET /transport/routes/{vehicle_id}/{trip_id}` previews a real-directory vehicle-to-pickup road route without saving or assigning it. Geometry is persisted when preparing active routes, assigning or replanning; normal polling makes no OSRM requests. `GET /transport/diagnostics` exposes source counts and worker readiness; `GET /transport/positions/{vehicle_id}` exposes bounded persisted position history.
 
-Requests require original `request_id`, `patient_id`, pickup/dropoff location, address and lat/lng fields, `pickup_time`, `status`, nullable `ambulance_id`, `transport_type`, `mobility`, `planned_duration_minutes`, `booking_type`, `service_level`.
-
-Dates must be ISO timestamps with `Z` or explicit timezone offsets; display uses America/New_York with dates across midnight. Unassigned ambulance IDs should be `null` (legacy empty strings are also accepted); assigned IDs must join a returned ambulance. IDs are never renumbered. Return the full relevant directory, not a page whose missing rows break joins. Unknown statuses, invalid coordinates/dates, duplicate IDs and malformed rows reject the complete snapshot. Omit `directory` when unavailable; return two empty arrays for known-empty tables. Neither case generates placeholder records.
-
-Directory request statuses: `scheduled`, `assigned`, `en_route_to_pickup`, `at_pickup`, `transporting`, `completed`, `cancelled`. Ambulance statuses: `available`, `assigned`, `en_route_to_pickup`, `at_pickup`, `transporting`, `out_of_service`.
-
-If the directory and dispatch schedule describe the same operating population, the API must preserve the same trip/unit IDs and assignment state in both projections. The frontend does not manufacture dispatch state from directory rows that lack shift timing or route information.
-
-## Writes and optional results
-
-Advertise `supportedActions: ["assign"]` only when the API implements assignment. The UI otherwise shows assignments as unavailable. `POST /transport/action` sends `{"type":"assign","tripId":"<original trip id>","vehicleId":"<original unit id>"}` and expects the updated complete snapshot. There is no optimistic mutation, direct database write, or fallback to a simulation POST. The server must reject unavailable units or conflicting changes.
-
-Optional `assignmentHistory` and `optimizationResults` use the existing canonical TypeScript types. History is authoritative when supplied, including an empty array. Optimization results must be measured paired-run results; absent results show an empty panel. The browser displays only backend history and metrics; it does not generate either. A zero-trip comparison is valid.
-
-Serve the API under the frontend origin or configure the HTTP service's existing CORS/authentication for its origin. The frontend currently uses same-origin cookies; cross-origin authenticated deployments require an agreed authentication contract. No database secrets may be exposed through `VITE_*` values.
+See [backend/README.md](../backend/README.md) for commands, implementation boundaries and verified limitations.

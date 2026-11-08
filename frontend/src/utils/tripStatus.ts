@@ -6,4 +6,5 @@ export const statusLabel = (t: Trip) =>
     onboard: 'Patient on board',
     transfer: 'Needs transfer',
     complete: 'Completed',
+    cancelled: 'Cancelled',
   })[t.status];

@@ -1283,3 +1283,13 @@ select {
     gap: 5px;
   }
 }
+
+/* Commands are sent to the server; these controls never run a local simulation. */
+.unit-server-actions { display: grid; gap: 8px; margin-top: 12px; }
+.backend-controls .feature-body > button { margin-bottom: 8px; }
+
+.backend-speeds { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 8px 0 12px; }
+.backend-speeds button[aria-pressed="true"] { background: #163f38; border-color: #55dec1; color: #a2f5df; }
+
+.reset-controls { margin: 12px 0; }
+.reset-controls button { margin-right: 8px; }

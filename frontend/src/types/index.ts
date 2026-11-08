@@ -1,6 +1,7 @@
 export type Position = [number, number];
 export type Vehicle = {
   route?: Position[];
+  routePhase?: 'pickup' | 'dropoff' | 'stopped';
   routeIndex?: number;
   movementPath?: Position[];
   unloadingUntil?: number;
@@ -21,7 +22,9 @@ export type Trip = {
   pickup: Position;
   destination: Position;
   scheduled: number;
-  status: 'waiting' | 'pickup' | 'onboard' | 'transfer' | 'complete';
+  status: 'waiting' | 'pickup' | 'onboard' | 'transfer' | 'complete' | 'cancelled';
+  plannedVehicleId?: string;
+  plannedSequence?: number;
   vehicleId?: string;
   actualPickup?: number;
   completedAt?: number;
@@ -65,6 +68,15 @@ export type DirectoryRequest = {
   service_level: string;
 };
 export type Snapshot = {
+  integration?: {
+    source: string;
+    schemaReady: boolean;
+    running: boolean;
+    workerConnected: boolean;
+    simulationSpeed: number;
+    referenceAt: string;
+    routing: string;
+  };
   directory?: TransportDirectory;
   supportedActions?: Action['type'][];
   assignmentHistory?: AssignmentChange[];
@@ -75,7 +87,13 @@ export type Snapshot = {
   trips: Trip[];
   events: string[];
 };
-export type Action = { type: 'assign'; tripId: string; vehicleId: string };
+export type Action =
+  | { type: 'assign'; tripId: string; vehicleId: string }
+  | { type: 'optimize' | 'routes' | 'reset' }
+  | { type: 'outage' | 'restore'; vehicleId: string }
+  | { type: 'delay'; vehicleId: string; minutes: number }
+  | { type: 'traffic'; enabled: boolean }
+  | { type: 'simulation'; running: boolean; speed?: number };
 
 export type AssignmentChange = {
   tripId: string;

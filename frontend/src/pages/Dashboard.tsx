@@ -3,8 +3,6 @@ import {
   Ambulance,
   Clock3,
   MapPin,
-  Pause,
-  Play,
   Activity,
 } from 'lucide-react';
 import { client, getDirectory, canAct } from '../api/client';
@@ -16,18 +14,18 @@ import VehicleDetails from '../components/VehicleDetails';
 import TransportSchedule from '../components/TransportSchedule';
 import ConnectionStatus from '../components/ConnectionStatus';
 import OptimizationResults from '../components/OptimizationResults';
+import BackendControls from '../components/BackendControls';
 import DispatchVisibility from '../components/DispatchVisibility';
 export default function Dashboard() {
   const [s, setS] = useState<Snapshot | null>(null),
     [selected, setSelected] = useState(''),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
-    [live, setLive] = useState(true);
+    [error, setError] = useState('');
   const [panel, setPanel] = useState<'live' | 'records'>('live');
   const [requestFocus, setRequestFocus] = useState(0);
   const [showSchedule, setShowSchedule] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
-  const lock = useRef(false);
+  const pending = useRef<Promise<void> | null>(null);
   const snapshotRef = useRef<Snapshot | null>(null);
 
   function commit(next: Snapshot) {
@@ -40,34 +38,39 @@ export default function Dashboard() {
     snapshotRef.current = next;
     setS(next);
   }
-  async function run(op: () => Promise<Snapshot>) {
-    if (lock.current) return;
-    lock.current = true;
-    setBusy(true);
-    setError('');
-    try {
-      commit(await op());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong.');
-      setLive(false);
-    } finally {
-      lock.current = false;
-      setBusy(false);
-    }
+  async function run(op: () => Promise<Snapshot>, background = false) {
+    if (background && pending.current) return;
+    // User commands wait for an in-flight read instead of being dropped.
+    const previous = pending.current;
+    if (!background) setBusy(true);
+    const request = (async () => {
+      await previous;
+      try {
+        commit(await op());
+        setError('');
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Something went wrong.');
+      } finally {
+        if (!background) setBusy(false);
+      }
+    })();
+    pending.current = request;
+    await request;
+    if (pending.current === request) pending.current = null;
   }
   useEffect(() => {
     void run(() => client.load());
   }, []);
   // Refresh server state only. Polling never advances the simulation clock.
   useEffect(() => {
-    if (!s || !live) return;
+    if (!s) return;
     const timer = window.setInterval(() => {
-      if (!document.hidden && !lock.current) void run(() => client.load());
+      if (!document.hidden && !pending.current) void run(() => client.load(), true);
     }, 1000);
     return () => window.clearInterval(timer);
-    // The request lock serializes reads/actions; commit owns the latest snapshot.
+    // Reads and commands are serialized; polling does not disable the controls.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [Boolean(s), live]);
+  }, [Boolean(s)]);
 
   if (!s)
     return (
@@ -76,7 +79,7 @@ export default function Dashboard() {
         <h1>Belos transport</h1>
         <p>{error || 'Loading the transport schedule…'}</p>
         {error && (
-          <button onClick={() => { setLive(true); void run(() => client.load()); }}>Retry</button>
+          <button onClick={() => { void run(() => client.load()); }}>Retry</button>
         )}
       </main>
     );
@@ -91,11 +94,11 @@ export default function Dashboard() {
     setPanel('records');
   };
   const missingRoutes = s.vehicles.filter(
-    (v) => v.tripId && (!v.route || v.route.length < 2),
+    (v) => v.tripId && v.routePhase !== 'stopped' && (!v.route || v.route.length < 2),
   );
   const directory = getDirectory(s);
-  const actionsBusy = busy || !live || Boolean(error);
-  const available = s.vehicles.filter((v) => !v.outOfService && !v.tripId && v.holdUntil <= s.minute);
+  const actionsBusy = busy || Boolean(error);
+  const available = s.vehicles.filter((v) => !v.outOfService && !v.tripId && v.holdUntil <= s.minute && !s.trips.some(t => t.plannedVehicleId === v.id));
   return (
     <div className="app">
       <header>
@@ -109,7 +112,6 @@ export default function Dashboard() {
           <ConnectionStatus
             busy={busy}
             onRetry={() => {
-              setLive(true);
               void run(() => client.load());
             }}
           />
@@ -168,7 +170,7 @@ export default function Dashboard() {
                 Pickup call
               </span>
               <span>
-                <i style={{ background: '#55dec1' }} />
+                <i style={{ background: '#22c55e' }} />
                 To pickup
               </span>
               <span>
@@ -177,7 +179,7 @@ export default function Dashboard() {
               </span>
             </div>
             <span className="map-note">
-              Server data · {error ? 'Last received snapshot · Updates stopped' : live ? 'Live updates' : 'Updates paused'}
+              Server data · {error ? 'Last received snapshot · Retrying connection' : 'Live updates'}
             </span>
           </div>
         </section>
@@ -246,17 +248,7 @@ export default function Dashboard() {
               aria-labelledby="live-tab"
               hidden={panel !== 'live'}
             >
-              <div className="shift-controls">
-                <button
-                  className="primary"
-                  disabled={busy}
-                  aria-pressed={live}
-                  onClick={() => setLive((running) => !running)}
-                >
-                  {live ? <Pause size={14} /> : <Play size={14} />}
-                  {live ? 'Pause updates' : 'Resume updates'}
-                </button>
-              </div>
+              <BackendControls snapshot={s} busy={actionsBusy} onAction={act} />
               {missingRoutes.length > 0 && (
                 <div className="route-warning" role="status">
                   Road routes missing for{' '}
@@ -287,6 +279,8 @@ export default function Dashboard() {
                 snapshot={s}
                 selected={selected}
                 onSelect={setSelected}
+                busy={actionsBusy}
+                onAction={act}
               />
               <TransportSchedule
                 snapshot={s}

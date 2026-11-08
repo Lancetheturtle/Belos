@@ -34,7 +34,6 @@ test('initial read and retry only GET server state', async () => {
     'disconnected',
     'connecting',
     'connected',
-    'connecting',
     'connected',
   ]);
 });
@@ -157,7 +156,7 @@ test('actions require advertised support and send server IDs without local mutat
   const before = structuredClone(s);
   await api.act(s, action);
   assert.deepEqual(s, before);
-  assert.deepEqual(calls, [{ url: '/api/transport/action', body: action }]);
+  assert.deepEqual(calls, [{ url: '/api/transport/commands', body: action }]);
 });
 
 test('bad directory data disconnects and a later valid empty snapshot reconnects', async () => {
@@ -172,4 +171,42 @@ test('bad directory data disconnects and a later valid empty snapshot reconnects
   bad = false;
   assert.deepEqual((await api.load()).directory?.transport_requests, []);
   assert.deepEqual(states, ['connecting', 'disconnected', 'connecting', 'connected']);
+});
+
+
+test('background reads keep connected status while pending and report real failures', async () => {
+  const states: string[] = [];
+  let respond!: (response: Response) => void;
+  const api = createTransportClient('/api', () => new Promise(resolve => { respond = resolve; }), state => states.push(state));
+  const first = api.load();
+  respond(Response.json(createSnapshot()));
+  await first;
+  states.length = 0;
+  const refresh = api.load();
+  assert.deepEqual(states, []);
+  respond(new Response('{}', { status: 503 }));
+  await assert.rejects(refresh, /503/);
+  assert.deepEqual(states, ['disconnected']);
+  const retry = api.load();
+  assert.equal(states.at(-1), 'connecting');
+  respond(Response.json(createSnapshot()));
+  await retry;
+  assert.equal(states.at(-1), 'connected');
+});
+
+test('all four speed choices are backend commands and use the returned speed', async () => {
+  const s = createSnapshot();
+  s.supportedActions = ['simulation'];
+  const sent: unknown[] = [];
+  const api = createTransportClient('/api', async (url, init) => {
+    assert.equal(url, '/api/transport/commands');
+    assert.equal(init?.method, 'POST');
+    sent.push(JSON.parse(String(init?.body)));
+    return Response.json(s);
+  }, () => {});
+  for (const speed of [1, 15, 30, 60]) {
+    const received = await api.act(s, { type: 'simulation', running: false, speed });
+    assert.deepEqual(received, s);
+  }
+  assert.deepEqual(sent, [1, 15, 30, 60].map(speed => ({ type: 'simulation', running: false, speed })));
 });

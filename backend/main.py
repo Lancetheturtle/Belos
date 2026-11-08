@@ -91,3 +91,7 @@ def api_reroute_truck(truck_id: int, call_id: int, db: Session = Depends(get_db)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
     return result
+
+# Add the populated Tiger Data transport API without replacing legacy routes.
+from backend.routes.transport import router as transport_router
+app.include_router(transport_router)

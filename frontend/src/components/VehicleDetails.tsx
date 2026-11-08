@@ -1,18 +1,23 @@
 import { Ambulance } from 'lucide-react';
-import type { Snapshot } from '../types';
+import type { Snapshot, Action } from '../types';
 import { clock } from '../utils/time';
 import { statusLabel } from '../utils/tripStatus';
+import { canAct } from '../api/client';
 
 type Props = {
   snapshot: Snapshot;
   selected: string;
   onSelect: (id: string) => void;
+  busy?: boolean;
+  onAction?: (action: Action) => void;
 };
 
 export default function VehicleDetails({
   snapshot: s,
   selected,
   onSelect: setSelected,
+  busy = false,
+  onAction,
 }: Props) {
   const v = s.vehicles.find((unit) => unit.id === selected) ?? s.vehicles[0];
   if (!v) return null;
@@ -61,6 +66,11 @@ export default function VehicleDetails({
           </p>
         )}
 
+        {onAction && <div className="unit-server-actions">
+          <button disabled={busy || !canAct(s, 'delay') || v.outOfService} onClick={() => onAction({type:'delay',vehicleId:v.id,minutes:10})}>Report 10 min crew delay</button>
+          {v.outOfService ? <button disabled={busy || !canAct(s, 'restore')} onClick={() => onAction({type:'restore',vehicleId:v.id})}>Return to service</button>
+            : <button disabled={busy || !canAct(s, 'outage')} onClick={() => onAction({type:'outage',vehicleId:v.id})}>Mark out of service</button>}
+        </div>}
       </div>
     </details>
   );

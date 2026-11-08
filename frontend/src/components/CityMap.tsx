@@ -126,6 +126,11 @@ export default function CityMap({
       // Plot exactly the position returned by the server; do not extrapolate.
       marker.setLatLng(vehicle.position);
       const trip = snapshot.trips.find((t) => t.id === vehicle.tripId);
+      const tooltip = document.createElement('span');
+      tooltip.textContent = trip
+        ? `${vehicle.id} · ${trip.id} · ${trip.status === 'onboard' ? 'Drop-off' : 'Pickup'}`
+        : vehicle.id;
+      marker.setTooltipContent(tooltip);
       let route = routes.current.get(vehicle.id);
       if (trip && vehicle.route && vehicle.route.length >= 2) {
         if (!route) {
@@ -136,13 +141,11 @@ export default function CityMap({
           routes.current.set(vehicle.id, route);
         }
         route.setStyle({
-          color: trip.status === 'onboard' ? '#63a5ff' : '#55dec1',
+          color: (vehicle.routePhase === 'dropoff' || trip.status === 'onboard') ? '#63a5ff' : '#22c55e',
           weight: vehicle.id === selected ? 4 : 2,
         });
-        route.setLatLngs([
-          vehicle.position,
-          ...vehicle.route.slice((vehicle.routeIndex ?? 0) + 1),
-        ]);
+        // Geometry is authoritative backend data, including its endpoints.
+        route.setLatLngs(vehicle.route);
       } else if (route) {
         route.remove();
         routes.current.delete(vehicle.id);
