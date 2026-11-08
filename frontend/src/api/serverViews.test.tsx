@@ -1,3 +1,4 @@
+import DispatchVisibility from '../components/DispatchVisibility';
 import TimeSavings from '../components/TimeSavings';
 import { test } from 'node:test';
 
@@ -232,4 +233,24 @@ test('time savings shows backend totals and preserves over-baseline results', ()
   assert.match(html,/Idle time between jobs is excluded/);
   metrics.completedJobs=0;metrics.averageJobMinutes=null as any;
   assert.match(renderToStaticMarkup(<TimeSavings metrics={metrics} />),/No completed timed jobs yet/);
+});
+
+test('outage alerts clear for reassigned queues and completed or cancelled requests', () => {
+  const s=createSnapshot();
+  const broken=s.vehicles[0].id, replacement=s.vehicles[1].id;
+  s.vehicles[0].outOfService=true;
+  s.trips[0].status='complete';
+  const t=s.trips[1];t.status='waiting';delete t.vehicleId;
+  s.assignmentHistory=[{tripId:t.id,minute:1,fromVehicleId:broken,reason:'Outage'}];
+  const render=()=>renderToStaticMarkup(<DispatchVisibility snapshot={s} onShowTrips={()=>{}} />);
+  assert.match(render(),/class="dispatch-alert"/);
+  t.plannedVehicleId=replacement;
+  assert.doesNotMatch(render(),/class="dispatch-alert"/);
+  delete t.plannedVehicleId;
+  t.vehicleId=replacement;t.status='pickup';
+  assert.doesNotMatch(render(),/class="dispatch-alert"/);
+  t.vehicleId=broken;t.status='cancelled';
+  assert.doesNotMatch(render(),/class="dispatch-alert"/);
+  t.status='complete';
+  assert.doesNotMatch(render(),/class="dispatch-alert"/);
 });

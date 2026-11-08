@@ -8,19 +8,16 @@ export default function DispatchVisibility({
   onShowTrips: () => void;
 }) {
   const history = s.assignmentHistory ?? [];
-  const affected = s.trips.filter(
-    (t) =>
-      (t.status !== 'complete' &&
-        s.vehicles.some((v) => v.id === t.vehicleId && v.outOfService)) ||
-      t.status === 'transfer' ||
-      (t.status === 'waiting' &&
-        history.some(
-          (h) =>
-            h.tripId === t.id &&
-            h.fromVehicleId &&
-            s.vehicles.some((v) => v.id === h.fromVehicleId && v.outOfService),
-        )),
-  );
+  const affected = s.trips.filter((t) => {
+    if (t.status === 'complete' || t.status === 'cancelled') return false;
+    // A queued reservation is a real replacement, even while the trip is waiting.
+    const assigned = t.vehicleId ?? t.plannedVehicleId;
+    if (assigned) return !s.vehicles.some(v => v.id === assigned && !v.outOfService);
+    if (t.status === 'transfer') return true;
+    const latest = history.filter(h => h.tripId === t.id).at(-1);
+    return t.status === 'waiting' && !latest?.toVehicleId && Boolean(latest?.fromVehicleId) &&
+      s.vehicles.some(v => v.id === latest?.fromVehicleId && v.outOfService);
+  });
   return (
     <>
       {affected.length > 0 && (
@@ -38,7 +35,7 @@ export default function DispatchVisibility({
             </p>
           ))}
           <button onClick={onShowTrips}>
-            Open trips to assign a replacement
+            Review unresolved trips
           </button>
         </div>
       )}
