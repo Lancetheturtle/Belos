@@ -1,43 +1,29 @@
-import scheduleData from '../data/transportDataset.json';
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 
-import type { Position, Snapshot } from '../types';
-import { isDemo } from '../api/client';
-import { distance, target } from '../mocks/simulation';
-
-// Match the dashboard's snapshot update cadence. The map interpolates between
-// real simulation positions; it never invents or saves its own dispatch state.
-const GLIDE_MS = isDemo ? 200 : 1000;
-
-type Movement = {
-  from: Position;
-  to: Position;
-  marker: L.CircleMarker;
-  route?: L.Polyline;
-  path: Position[];
-  remaining: Position[];
-};
+import type { Snapshot, TransportDirectory } from '../types';
 
 export default function CityMap({
   snapshot,
+  scheduleData,
   selected,
   onSelect,
-  cameraReset = 0,
   requestFocus = 0,
   showSchedule = false,
   selectedRequest = null,
   onSelectRequest,
 }: {
   snapshot: Snapshot;
+  scheduleData: TransportDirectory;
   selected: string;
   onSelect: (id: string) => void;
-  cameraReset?: number;
   requestFocus?: number;
   showSchedule?: boolean;
   selectedRequest?: string | null;
   onSelectRequest?: (id: string) => void;
 }) {
+  const scheduleRef = useRef(scheduleData);
+  scheduleRef.current = scheduleData;
   const scheduleLayer = useRef<L.LayerGroup | null>(null);
   const requestSelectRef = useRef(onSelectRequest);
   requestSelectRef.current = onSelectRequest;
@@ -48,8 +34,6 @@ export default function CityMap({
   const routes = useRef(new Map<string, L.Polyline>());
   const calls = useRef(new Map<string, L.Marker>());
   const destinationMarker = useRef<L.CircleMarker | null>(null);
-  const frame = useRef<number | null>(null);
-  const previousMinute = useRef<number | null>(null);
   const onSelectRef = useRef(onSelect);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
@@ -83,7 +67,6 @@ export default function CityMap({
     observer.observe(element.current);
 
     return () => {
-      if (frame.current !== null) cancelAnimationFrame(frame.current);
       observer.disconnect();
       m.remove();
       map.current = null;
@@ -92,7 +75,6 @@ export default function CityMap({
       routes.current.clear();
       calls.current.clear();
       destinationMarker.current = null;
-      previousMinute.current = null;
     };
   }, []);
 
@@ -102,7 +84,6 @@ export default function CityMap({
 
     // Keep the actual Leaflet markers mounted. Recreating them for each live
     // snapshot causes visible blinking, lost tooltips, and teleportation.
-    if (frame.current !== null) cancelAnimationFrame(frame.current);
 
     const vehicleIds = new Set(snapshot.vehicles.map((v) => v.id));
     for (const [id, marker] of markers.current) {
@@ -118,7 +99,6 @@ export default function CityMap({
       }
     }
 
-    const movements: Movement[] = [];
     for (const vehicle of snapshot.vehicles) {
       let marker = markers.current.get(vehicle.id);
       if (!marker) {
@@ -143,15 +123,13 @@ export default function CityMap({
       marker.setStyle({ color, fillColor: color, fillOpacity: 1, weight: 3 });
       marker.setRadius(vehicle.id === selected ? 11 : 8);
 
-      const point = marker.getLatLng();
-      const from: Position = [point.lat, point.lng];
+      // Plot exactly the position returned by the server; do not extrapolate.
+      marker.setLatLng(vehicle.position);
       const trip = snapshot.trips.find((t) => t.id === vehicle.tripId);
       let route = routes.current.get(vehicle.id);
-      let destination: Position | undefined;
       if (trip && vehicle.route && vehicle.route.length >= 2) {
-        destination = target(trip);
         if (!route) {
-          route = L.polyline([from, destination], {
+          route = L.polyline(vehicle.route, {
             interactive: false,
             opacity: 0.85,
           }).addTo(g);
@@ -172,14 +150,7 @@ export default function CityMap({
       }
 
       marker.bringToFront();
-      movements.push({
-        from,
-        to: vehicle.position,
-        marker,
-        route,
-        remaining: vehicle.route?.slice((vehicle.routeIndex ?? 0) + 1) ?? [],
-        path: vehicle.movementPath ?? [from, vehicle.position],
-      });
+
     }
 
     // Keep pickup beacons mounted so their pulse continues across live ticks.
@@ -228,7 +199,7 @@ export default function CityMap({
       (t) => t.id === selectedVehicle?.tripId,
     );
     if (selectedTrip?.status === 'onboard') {
-      const point = target(selectedTrip);
+      const point = selectedTrip.destination;
       const tooltip = document.createElement('span');
       tooltip.textContent = selectedTrip.to;
       if (!destinationMarker.current) {
@@ -248,68 +219,6 @@ export default function CityMap({
       destinationMarker.current = null;
     }
 
-    // Resets and manual disruptions snap to their authoritative positions.
-    // During live updates, interpolate linearly without ease-in/ease-out
-    // so that movement doesn't stop briefly between successive ticks.
-    const advancing =
-      previousMinute.current !== null &&
-      snapshot.minute > previousMinute.current;
-    const animate =
-      advancing &&
-      !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    previousMinute.current = snapshot.minute;
-
-    const update = (progress: number) => {
-      for (const { from, to, marker, path, route, remaining } of movements) {
-        let point: Position = [
-          from[0] + (to[0] - from[0]) * progress,
-          from[1] + (to[1] - from[1]) * progress,
-        ];
-        let untraveled: Position[] = [];
-        if (path.length > 1) {
-          const lengths = path.slice(1).map((p, i) => distance(path[i], p));
-          let left = lengths.reduce((a, b) => a + b, 0) * progress;
-          point = path[path.length - 1];
-          for (let i = 0; i < lengths.length; i++) {
-            if (left <= lengths[i] && lengths[i] > 0) {
-              const t = left / lengths[i];
-              point = [
-                path[i][0] + (path[i + 1][0] - path[i][0]) * t,
-                path[i][1] + (path[i + 1][1] - path[i][1]) * t,
-              ];
-              untraveled = path.slice(i + 1);
-              break;
-            }
-            left -= lengths[i];
-          }
-        }
-        marker.setLatLng(point);
-        // Start the highlight at the displayed marker, retaining road bends ahead.
-        // Include the rest of this animated tick before the authoritative route tail.
-        route?.setLatLngs([point, ...untraveled, ...remaining]);
-      }
-    };
-
-    if (
-      animate &&
-      movements.some(({ from, to }) => from[0] !== to[0] || from[1] !== to[1])
-    ) {
-      const start = performance.now();
-      const glide = (now: number) => {
-        const progress = Math.min(1, (now - start) / GLIDE_MS);
-        update(progress);
-        if (progress < 1) frame.current = requestAnimationFrame(glide);
-        else frame.current = null;
-      };
-      frame.current = requestAnimationFrame(glide);
-    } else {
-      update(1);
-      frame.current = null;
-    }
-
-    return () => {
-      if (frame.current !== null) cancelAnimationFrame(frame.current);
-    };
   }, [snapshot, selected]);
 
   useEffect(() => {
@@ -319,7 +228,7 @@ export default function CityMap({
     if (!showSchedule) return;
     for (const request of scheduleData.transport_requests) {
       const label = document.createElement('span');
-      label.textContent = `${request.patient_id} · ${request.pickup_location} · Static schedule`;
+      label.textContent = `${request.patient_id} · ${request.pickup_location}`;
       L.circleMarker([request.pickup_lat, request.pickup_lng], {
         radius: request.request_id === selectedRequest ? 9 : 5,
         color: '#d4a8ff',
@@ -336,7 +245,7 @@ export default function CityMap({
     );
     if (request) {
       const label = document.createElement('span');
-      label.textContent = `Destination: ${request.dropoff_location} · Static schedule`;
+      label.textContent = `Destination: ${request.dropoff_location}`;
       L.circleMarker([request.dropoff_lat, request.dropoff_lng], {
         radius: 11,
         color: '#75b7ff',
@@ -346,9 +255,9 @@ export default function CityMap({
         .bindTooltip(label, { permanent: true })
         .addTo(group);
     }
-  }, [showSchedule, selectedRequest]);
+  }, [showSchedule, selectedRequest, scheduleData]);
   useEffect(() => {
-    const request = scheduleData.transport_requests.find(
+    const request = scheduleRef.current.transport_requests.find(
       (t) => t.request_id === selectedRequest,
     );
     if (showSchedule && request)
@@ -360,15 +269,11 @@ export default function CityMap({
         { padding: [65, 65], maxZoom: 14 },
       );
   }, [selectedRequest, showSchedule, requestFocus]);
-  useEffect(() => {
-    map.current?.setView([42.731, -73.675], 13);
-  }, [cameraReset]);
-
   // A user selection may recenter once. Live position changes do not pan the map.
   useEffect(() => {
     const vehicle = snapshot.vehicles.find((v) => v.id === selected);
     if (vehicle) map.current?.panTo(vehicle.position);
-    // Use only selection changes, not every simulation update.
+    // Use only selection changes, not every server update.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
@@ -389,7 +294,7 @@ export default function CityMap({
       </button>
       {showSchedule && (
         <div className="static-map-label">
-          Purple dots: static schedule pickups · Blue ring: selected destination
+          Purple dots: server schedule pickups · Blue ring: selected destination
         </div>
       )}
       {failed && (

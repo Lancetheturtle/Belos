@@ -1,14 +1,13 @@
-import type { AssignmentChange, Snapshot } from '../types';
+import type { Snapshot } from '../types';
 import { clock } from '../utils/time';
 export default function DispatchVisibility({
   snapshot: s,
-  history,
   onShowTrips,
 }: {
   snapshot: Snapshot;
-  history: AssignmentChange[];
   onShowTrips: () => void;
 }) {
+  const history = s.assignmentHistory ?? [];
   const affected = s.trips.filter(
     (t) =>
       (t.status !== 'complete' &&
@@ -70,13 +69,11 @@ export default function DispatchVisibility({
                 </article>
               ))
           ) : (
-            <p>No changes yet. Breakdowns and replacements will appear here.</p>
+            <p>{s.assignmentHistory ? 'No assignment changes reported.' : 'Assignment history has not been supplied by the server.'}</p>
           )}
           <p>
             Shows{' '}
-            {s.assignmentHistory
-              ? 'history provided by the backend'
-              : 'changes observed during this browser session'}
+            history provided by the backend
             .
           </p>
         </div>

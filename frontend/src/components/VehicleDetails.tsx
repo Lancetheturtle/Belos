@@ -1,23 +1,18 @@
 import { Ambulance } from 'lucide-react';
-import type { Action, Snapshot } from '../types';
+import type { Snapshot } from '../types';
 import { clock } from '../utils/time';
 import { statusLabel } from '../utils/tripStatus';
-import DisruptionControls from './DisruptionControls';
 
 type Props = {
   snapshot: Snapshot;
   selected: string;
   onSelect: (id: string) => void;
-  busy: boolean;
-  onAction: (action: Action) => void;
 };
 
 export default function VehicleDetails({
   snapshot: s,
   selected,
   onSelect: setSelected,
-  busy,
-  onAction: act,
 }: Props) {
   const v = s.vehicles.find((unit) => unit.id === selected) ?? s.vehicles[0];
   if (!v) return null;
@@ -65,10 +60,7 @@ export default function VehicleDetails({
               : vehicleTrip.from}
           </p>
         )}
-        <details className="report-problem">
-          <summary>Report a problem</summary>
-          <DisruptionControls vehicle={v} busy={busy} onAction={act} />
-        </details>
+
       </div>
     </details>
   );

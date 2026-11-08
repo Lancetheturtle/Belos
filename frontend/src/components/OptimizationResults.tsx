@@ -1,26 +1,16 @@
 import type { OptimizationComparison } from '../types';
-const example: OptimizationComparison = {
-  scenarioId: 'Example shift — 20 trips',
-  tripsTotal: 20,
-  baseline: {
-    onTimePickups: 14,
-    averageDelayMinutes: 8,
-    distanceKm: 145,
-    tripsCompleted: 18,
-  },
-  optimized: {
-    onTimePickups: 17,
-    averageDelayMinutes: 5,
-    distanceKm: 132,
-    tripsCompleted: 19,
-  },
-};
 export default function OptimizationResults({
   results,
 }: {
   results?: OptimizationComparison;
 }) {
-  const data = results ?? example;
+  if (!results) return (
+    <details className="drawer optimization-results">
+      <summary>Optimization results</summary>
+      <p className="feature-body">No optimization results supplied by the server.</p>
+    </details>
+  );
+  const data = results;
   const metrics = [
     {
       key: 'onTimePickups' as const,
@@ -48,14 +38,12 @@ export default function OptimizationResults({
       <summary>
         <span>Optimization results</span>
         <span className="summary-meta">
-          {results ? 'Backend results' : 'Example only'}
+          Backend results
         </span>
       </summary>
       <div className="feature-body">
         <span className="pill amber">
-          {results
-            ? 'Reported by backend'
-            : 'Illustrative numbers · Not measured'}
+          Reported by backend
         </span>
         <p>{data.scenarioId}</p>
         <div className="kpi-grid">
@@ -63,7 +51,7 @@ export default function OptimizationResults({
             <article key={m.key}>
               <span>{m.label}</span>
               <strong>{m.format(data.optimized[m.key])}</strong>
-              <small>Optimized {results ? 'result' : 'example'}</small>
+              <small>Optimized result</small>
             </article>
           ))}
         </div>
@@ -86,9 +74,7 @@ export default function OptimizationResults({
           </tbody>
         </table>
         <p>
-          {results
-            ? 'Compare runs using identical requests, fleet, time window, and measurement definitions.'
-            : 'Layout preview only. These numbers do not describe your simulation or demonstrate real savings. Your partner can supply actual paired-run results.'}
+          Compare runs using identical requests, fleet, time window, and measurement definitions.
         </p>
       </div>
     </details>

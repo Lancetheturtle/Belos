@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Ambulance, Users } from 'lucide-react';
-import data from '../data/transportDataset.json';
+import type { TransportDirectory } from '../types';
 
 const labels: Record<string, string> = {
   scheduled: 'Needs pickup · Unassigned',
@@ -37,9 +37,11 @@ const pickupStatuses = new Set([
   'at_pickup',
 ]);
 export default function PatientTransports({
+  data,
   selectedRequest,
   onSelectRequest,
 }: {
+  data: TransportDirectory;
   selectedRequest?: string | null;
   onSelectRequest?: (id: string) => void;
 }) {
@@ -47,7 +49,7 @@ export default function PatientTransports({
     [search, setSearch] = useState('');
   const units = useMemo(
     () => new Map(data.ambulances.map((unit) => [unit.ambulance_id, unit])),
-    [],
+    [data.ambulances],
   );
   const counts = {
     pickup: data.transport_requests.filter((t) => pickupStatuses.has(t.status))
@@ -86,14 +88,13 @@ export default function PatientTransports({
             Patients
           </span>
           <span className="summary-meta">
-            {data.transport_requests.length} people
+            {data.transport_requests.length} transports
           </span>
         </summary>
         <div className="dataset-intro">
-          <strong>Patient records · CSV snapshot</strong>
+          <strong>Patient records · Server data</strong>
           <p>
-            60 fictional patients · Nov 7–8, 2026, Eastern time. Not connected
-            to the live map yet.
+            Records and locations refresh with the server snapshot. Times shown in Eastern time.
           </p>
         </div>
         <div className="dataset-counts">
@@ -123,7 +124,7 @@ export default function PatientTransports({
             </option>
             <option value="at_pickup">Ambulance at pickup</option>
             <option value="completed">Completed ({counts.completed})</option>
-            <option value="all">All transports (60)</option>
+            <option value="all">All transports ({data.transport_requests.length})</option>
           </select>
           <label htmlFor="patient-search">
             Search patient, trip, unit, or facility
@@ -131,7 +132,7 @@ export default function PatientTransports({
           <input
             id="patient-search"
             type="search"
-            placeholder="e.g. DEMO-P0006 or Samaritan"
+            placeholder="Patient, trip, unit, or facility"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -141,7 +142,7 @@ export default function PatientTransports({
         </div>
         <div className="dataset-list">
           {rows.map((t) => {
-            const unit = units.get(t.ambulance_id);
+            const unit = units.get(t.ambulance_id ?? '');
             const patientLocation =
               t.status === 'completed'
                 ? t.dropoff_location
@@ -230,7 +231,7 @@ export default function PatientTransports({
           })}
           {!rows.length && (
             <p className="dataset-empty">
-              No transports match. Try another status or search.
+              {data.transport_requests.length ? 'No transports match. Try another status or search.' : 'No patient records supplied by the server.'}
             </p>
           )}
         </div>
@@ -244,7 +245,7 @@ export default function PatientTransports({
           <span className="summary-meta">{data.ambulances.length} units</span>
         </summary>
         <p className="dataset-caption">
-          CSV snapshot locations, separate from the four-unit live demo.
+          Ambulance records supplied by the server.
         </p>
         {data.ambulances.map((unit) => {
           const active = data.transport_requests.find(

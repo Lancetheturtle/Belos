@@ -1,4 +1,4 @@
-import type { Action, Snapshot } from '../types';
+import type { Action, Snapshot, TransportDirectory } from '../types';
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected';
 const point = (p: unknown) =>
   Array.isArray(p) &&
@@ -6,9 +6,38 @@ const point = (p: unknown) =>
   p.every((n) => typeof n === 'number' && Number.isFinite(n)) &&
   Math.abs(p[0]) <= 90 &&
   Math.abs(p[1]) <= 180;
+const object = (value: any) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const text = (value: unknown) => typeof value === 'string' && value.trim().length > 0;
+const date = (value: unknown) => text(value) && /(?:Z|[+-]\d{2}:\d{2})$/.test(value as string) && Number.isFinite(Date.parse(value as string));
+const count = (value: unknown) => Number.isInteger(value) && (value as number) >= 0;
+const actionTypes = ['assign'];
+export function validateDirectory(data: any): TransportDirectory {
+  if (!object(data) || !Array.isArray(data.ambulances) || !Array.isArray(data.transport_requests))
+    throw new Error('Invalid transport directory.');
+  const units = new Set<string>();
+  for (const v of data.ambulances) {
+    if (!object(v) || !['ambulance_id', 'unit_name', 'current_location', 'service_level'].every(k => text(v[k])) ||
+      !['available', 'assigned', 'en_route_to_pickup', 'at_pickup', 'transporting', 'out_of_service'].includes(v.status) ||
+      units.has(v.ambulance_id) || !point([v.current_lat, v.current_lng]) ||
+      !count(v.crew_count) || !count(v.stretcher_capacity) || !date(v.last_location_update_at) || !date(v.shift_end_at))
+      throw new Error('Invalid ambulance in transport directory.');
+    units.add(v.ambulance_id);
+  }
+  const requests = new Set<string>();
+  for (const t of data.transport_requests) {
+    if (!object(t) || !['request_id', 'patient_id', 'pickup_location', 'pickup_address', 'dropoff_location', 'dropoff_address', 'transport_type', 'mobility', 'booking_type', 'service_level'].every(k => text(t[k])) ||
+      !['scheduled', 'assigned', 'en_route_to_pickup', 'at_pickup', 'transporting', 'completed', 'cancelled'].includes(t.status) ||
+      requests.has(t.request_id) || !point([t.pickup_lat, t.pickup_lng]) || !point([t.dropoff_lat, t.dropoff_lng]) ||
+      !date(t.pickup_time) || !Number.isFinite(t.planned_duration_minutes) || t.planned_duration_minutes < 0 ||
+      (t.ambulance_id !== null && t.ambulance_id !== '' && (!text(t.ambulance_id) || !units.has(t.ambulance_id))))
+      throw new Error('Invalid request in transport directory.');
+    requests.add(t.request_id);
+  }
+  return data;
+}
 export function validateSnapshot(data: any): Snapshot {
   if (
-    !data ||
+    !object(data) ||
     !Number.isFinite(data.minute) ||
     typeof data.traffic !== 'boolean' ||
     !Array.isArray(data.vehicles) ||
@@ -20,7 +49,8 @@ export function validateSnapshot(data: any): Snapshot {
   const ids = new Set<string>();
   for (const v of data.vehicles) {
     if (
-      typeof v.id !== 'string' ||
+      !object(v) ||
+      !text(v.id) ||
       ids.has(v.id) ||
       !point(v.position) ||
       typeof v.crew !== 'string' ||
@@ -30,15 +60,22 @@ export function validateSnapshot(data: any): Snapshot {
     )
       throw new Error('Invalid vehicle in backend response.');
     ids.add(v.id);
+    if ((v.tripId !== undefined && !text(v.tripId)) ||
+        (v.routeIndex !== undefined && (!count(v.routeIndex) || !v.route || v.routeIndex >= v.route.length)) ||
+        (v.movementPath !== undefined && (!Array.isArray(v.movementPath) || !v.movementPath.every(point))) ||
+        (v.unloadingUntil !== undefined && !Number.isFinite(v.unloadingUntil)))
+      throw new Error('Invalid vehicle movement in backend response.');
     if (
       v.route !== undefined &&
       (!Array.isArray(v.route) || !v.route.every(point))
     )
       throw new Error('Invalid road route.');
   }
-  for (const t of data.trips)
+  const tripIds = new Set<string>();
+  for (const t of data.trips) {
     if (
-      typeof t.id !== 'string' ||
+      !object(t) ||
+      !text(t.id) || tripIds.has(t.id) ||
       typeof t.from !== 'string' ||
       typeof t.to !== 'string' ||
       !point(t.pickup) ||
@@ -49,12 +86,31 @@ export function validateSnapshot(data: any): Snapshot {
       )
     )
       throw new Error('Invalid trip in backend response.');
-  if (data.optimizationResults) {
+    tripIds.add(t.id);
+    if ((t.vehicleId !== undefined && !ids.has(t.vehicleId)) ||
+        ['eta', 'actualPickup', 'completedAt'].some(k => t[k] !== undefined && !Number.isFinite(t[k])) ||
+        (t.transferLocation !== undefined && !point(t.transferLocation)) ||
+        (t.transportRoute !== undefined && (!Array.isArray(t.transportRoute) || !t.transportRoute.every(point))))
+      throw new Error('Invalid trip details in backend response.');
+  }
+  for (const v of data.vehicles) {
+    if (v.tripId !== undefined && !data.trips.some((t: any) => t.id === v.tripId && t.vehicleId === v.id))
+      throw new Error('Inconsistent vehicle assignment.');
+  }
+  for (const t of data.trips) {
+    if (t.vehicleId !== undefined && t.status !== 'complete' && !data.vehicles.some((v: any) => v.id === t.vehicleId && v.tripId === t.id))
+      throw new Error('Inconsistent trip assignment.');
+  }
+  if (data.directory !== undefined) validateDirectory(data.directory);
+  if (data.supportedActions !== undefined && (!Array.isArray(data.supportedActions) || !data.supportedActions.every((a: unknown) => actionTypes.includes(a as string))))
+    throw new Error('Invalid supported actions.');
+  if (data.optimizationResults !== undefined) {
     const result = data.optimizationResults;
     if (
+      !object(result) ||
       typeof result.scenarioId !== 'string' ||
       !Number.isFinite(result.tripsTotal) ||
-      result.tripsTotal <= 0
+      !count(result.tripsTotal)
     )
       throw new Error('Invalid optimization comparison.');
     for (const group of [result.baseline, result.optimized])
@@ -76,7 +132,7 @@ export function validateSnapshot(data: any): Snapshot {
     (!Array.isArray(data.assignmentHistory) ||
       !data.assignmentHistory.every(
         (h: any) =>
-          typeof h.tripId === 'string' &&
+          object(h) && typeof h.tripId === 'string' &&
           Number.isFinite(h.minute) &&
           typeof h.reason === 'string' &&
           (h.fromVehicleId === undefined ||
@@ -92,17 +148,19 @@ export function createTransportClient(
   fetcher: typeof fetch,
   status: (state: ConnectionState, error?: string) => void,
 ) {
-  async function request(path: string, body?: Action | {}) {
+  async function request(path: string, body?: Action) {
     status('connecting');
     try {
       const response = await fetcher(`${base.replace(/\/$/, '')}${path}`, {
         method: body ? 'POST' : 'GET',
         headers: body ? { 'Content-Type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
+        cache: 'no-store',
+        credentials: 'same-origin',
         signal: AbortSignal.timeout(10000),
       });
       if (!response.ok)
-        throw new Error(`Backend request failed (${response.status}).`);
+        throw new Error(`Transport API request failed (${response.status}) at ${path}.`);
       const snapshot = validateSnapshot(await response.json());
       status('connected');
       return snapshot;
@@ -114,7 +172,9 @@ export function createTransportClient(
   }
   return {
     load: () => request('/transport/state'),
-    reset: () => request('/transport/reset', {}),
-    act: (_s: Snapshot, a: Action) => request('/transport/action', a),
+    act: (s: Snapshot, a: Action) => {
+      if (!s.supportedActions?.includes(a.type)) return Promise.reject(new Error('This action is not supported by the server.'));
+      return request('/transport/action', a);
+    },
   };
 }
