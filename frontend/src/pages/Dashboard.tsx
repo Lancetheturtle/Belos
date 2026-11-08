@@ -103,7 +103,9 @@ export default function Dashboard() {
       <header>
         <a className="brand" href="#">
           <span>
-            <img src="/logo.png" alt="Belos" width={32} height={32} />
+            <span className="brand-logo-art">
+              <img src="/logo.png" alt="Belos" />
+            </span>
           </span>
           belos<span className="brand-sub">TRANSPORT OPERATIONS</span>
         </a>
