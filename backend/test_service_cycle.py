@@ -73,16 +73,36 @@ class ServiceCycleTests(unittest.TestCase):
         self.assertEqual(cycle_metrics(s)["cycles"][0]["actualCycleMinutes"], active)
 
     def test_total_savings_counts_each_finished_cycle_once_including_losses(self):
-        state = {'serviceModel': MODEL, 'trips': [
-            {'id': 'A', 'status': 'complete', 'dispatchStartedAt': 0, 'availableAt': 90, 'activeWorkMinutes': 60},
-            {'id': 'B', 'status': 'complete', 'dispatchStartedAt': 0, 'availableAt': 100, 'activeWorkMinutes': 80},
-            {'id': 'C', 'status': 'onboard', 'dispatchStartedAt': 0, 'activeWorkMinutes': 10},
-        ]}
-        self.assertEqual(cycle_metrics(state)['totalMinutesSaved'], 10)
-        self.assertEqual(cycle_metrics(state)['completedCycles'], 2)
-        self.assertEqual(cycle_metrics(state)['totalMinutesSaved'], 10)
-        state.pop('serviceModel')
-        self.assertIsNone(cycle_metrics(state)['totalMinutesSaved'])
+        state = {
+            "serviceModel": MODEL,
+            "trips": [
+                {
+                    "id": "A",
+                    "status": "complete",
+                    "dispatchStartedAt": 0,
+                    "availableAt": 90,
+                    "activeWorkMinutes": 60,
+                },
+                {
+                    "id": "B",
+                    "status": "complete",
+                    "dispatchStartedAt": 0,
+                    "availableAt": 100,
+                    "activeWorkMinutes": 80,
+                },
+                {
+                    "id": "C",
+                    "status": "onboard",
+                    "dispatchStartedAt": 0,
+                    "activeWorkMinutes": 10,
+                },
+            ],
+        }
+        self.assertEqual(cycle_metrics(state)["totalMinutesSaved"], 10)
+        self.assertEqual(cycle_metrics(state)["completedCycles"], 2)
+        self.assertEqual(cycle_metrics(state)["totalMinutesSaved"], 10)
+        state.pop("serviceModel")
+        self.assertIsNone(cycle_metrics(state)["totalMinutesSaved"])
 
     def test_old_shifts_and_waits_are_excluded_from_active_cycle(self):
         s, router = self.setup_cycle()

@@ -59,7 +59,9 @@ def cycle_metrics(state):
         "compatibleShift": compatible,
         "cycles": rows,
         "completedCycles": len(completed),
-        "totalMinutesSaved": sum(75 - minutes for minutes in completed) if compatible else None,
+        "totalMinutesSaved": (
+            sum(75 - minutes for minutes in completed) if compatible else None
+        ),
         "averageActualCycleMinutes": average,
         "averageMinutesBelowBenchmark": 75 - average if average is not None else None,
         "basis": "User-supplied 75-minute estimate, not a measured control group. Belos retains road-based drive times and uses the same 15+32+5 service minutes. Active cycle counts road travel, preparation/loading, handoff/paperwork and reset only. Idle waiting for a patient, another assignment, or a crew hold is excluded from this KPI. Total elapsed cycle and excluded waiting remain visible separately. Transfers can add active work. Compare this active-work definition consistently with the supplied benchmark. Positive difference means below the benchmark; negative means above. Only finished cycles from a freshly reset shift are included.",

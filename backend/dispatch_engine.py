@@ -60,10 +60,7 @@ def multiplier(state, vehicle):
 
 
 def event(state, message):
-    state["events"] = [
-        f'{state["minute"]:.1f} min Ãƒâ€šÃ‚Â· {message}',
-        *state["events"],
-    ][:30]
+    state["events"] = [f'{state["minute"]:.1f} min | {message}', *state["events"]][:30]
 
 
 def history(state, trip, old, new, reason):

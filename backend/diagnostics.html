@@ -55,7 +55,7 @@
   <h1>Belos — live dispatch numbers</h1>
   <section aria-label="Total minutes saved">
     <h2>Total minutes saved vs. 75-minute benchmark</h2>
-    <strong id="total-saved" style="font-size:36px">—</strong>
+    <strong id="total-saved" style="font-size: 36px">—</strong>
     <p id="total-saved-note" class="muted">Waiting for live cycle results…</p>
   </section>
   <p>
@@ -140,7 +140,9 @@
       $('plan-status').textContent =
         `Current dispatch: ${data.dispatch?.status ?? 'unknown'} · ${data.dispatch?.message ?? ''}`;
       const b = data.cycleBenchmark;
-      $('total-saved').textContent = b?.compatibleShift ? `${number(b.totalMinutesSaved)} min` : '—';
+      $('total-saved').textContent = b?.compatibleShift
+        ? `${number(b.totalMinutesSaved)} min`
+        : '—';
       $('total-saved-note').textContent = b?.compatibleShift
         ? `Net total across ${b.completedCycles} finished cycles: 75 minutes per cycle minus active work. Includes slower cycles as negative savings. Waiting is excluded. Benchmark comparison, not measured control-group savings.`
         : 'Reset shift to start a compatible active-work run.';
