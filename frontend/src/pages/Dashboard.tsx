@@ -108,7 +108,7 @@ export default function Dashboard() {
               <img src="/logo.png" alt="Belos" />
             </span>
           </span>
-          belos<span className="brand-sub">TRANSPORT OPERATIONS</span>
+          Belos<span className="brand-sub">TRANSPORT OPERATIONS</span>
         </a>
         <div className="header-right">
           <ConnectionStatus
