@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import { needsPickupBeacon } from '../utils/tripStatus';
 
 import type { Snapshot, TransportDirectory } from '../types';
 
@@ -158,7 +159,7 @@ export default function CityMap({
 
     // Keep pickup beacons mounted so their pulse continues across live ticks.
     const pendingCalls = snapshot.trips.filter((t) =>
-      ['waiting', 'pickup', 'transfer'].includes(t.status),
+      needsPickupBeacon(t, snapshot.vehicles.find(v => v.id === t.vehicleId)),
     );
     const callIds = new Set(pendingCalls.map((t) => t.id));
     for (const [id, marker] of calls.current) {
