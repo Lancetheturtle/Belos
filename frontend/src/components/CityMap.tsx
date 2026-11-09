@@ -159,7 +159,7 @@ export default function CityMap({
 
     // Keep pickup beacons mounted so their pulse continues across live ticks.
     const pendingCalls = snapshot.trips.filter((t) =>
-      needsPickupBeacon(t, snapshot.vehicles.find(v => v.id === t.vehicleId)),
+      needsPickupBeacon(t, snapshot.minute, snapshot.vehicles.find(v => v.id === t.vehicleId)),
     );
     const callIds = new Set(pendingCalls.map((t) => t.id));
     for (const [id, marker] of calls.current) {
