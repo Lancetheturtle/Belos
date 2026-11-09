@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "tsx --test src/utils/time.test.ts src/api/transportClient.test.ts src/api/serverViews.test.tsx"
+    "test": "tsx --test src/utils/time.test.ts src/utils/tripStatus.test.ts src/api/transportClient.test.ts src/api/serverViews.test.tsx"
   },
   "dependencies": {
     "react": "^19.2.0",
