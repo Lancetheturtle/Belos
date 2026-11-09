@@ -26,6 +26,9 @@ def road(start,end):
 
 class IntegrationTests(unittest.TestCase):
     def setUp(self):
+        self.coverage_patch=patch('backend.services.transport_coverage.SIMULATED_RELIEF_CREWS',False)
+        self.coverage_patch.start()
+        self.addCleanup(self.coverage_patch.stop)
         self.timing_patch=patch.multiple('backend.services.transport_timing',LOAD_MINUTES=2.0,HANDOFF_MINUTES=2.0,RESET_MINUTES=0.0)
         self.timing_patch.start()
         self.addCleanup(self.timing_patch.stop)
@@ -318,15 +321,19 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(response.json()['integration']['simulationSpeed'], 1)
         self.assertFalse(response.json()['traffic'])
         with self.sessions.begin() as db:
-            self.assertEqual(Store(db).source(), original)
-            self.assertEqual(Store(db).all_plans(), {})
+            restored=Store(db).source()
+            self.assertEqual(restored[0],original[0])
+            for after,before in zip(restored[1],original[1]):
+                self.assertEqual({k:v for k,v in after.items() if k!='ambulance_id'}, {k:v for k,v in before.items() if k!='ambulance_id'})
+                self.assertIsNotNone(after['ambulance_id'])
+            self.assertEqual(len(Store(db).all_plans()),3)
             self.assertEqual(Store(db).holds(), {})
             self.assertIsNotNone(baseline(db))
             saved = db.execute(select(checkpoints.c.body).where(checkpoints.c.kind=='before_reset')).scalar_one()
             self.assertTrue(saved['clock']['running'])
             clock=Store(db).clock()
             tick(db, utc(clock['wall_at'])+timedelta(seconds=60))
-            self.assertEqual(Store(db).source(), original)
+            self.assertEqual(Store(db).source(), restored)
             self.assertEqual(Store(db).clock()['minute'], clock['minute'])
 
     def test_reset_without_baseline_is_rejected_without_writes(self):
@@ -382,7 +389,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code,200,response.text)
         self.assertEqual(response.json()['directory']['ambulances'][0]['unit_name'],'Updated name')
         self.assertEqual(response.json()['directory']['transport_requests'][0]['pickup_address'],'Updated address')
-        self.assertIsNone(response.json()['directory']['transport_requests'][0]['ambulance_id'])
+        self.assertIsNotNone(response.json()['trips'][0].get('plannedVehicleId'))
 
 
     def test_worker_startup_pauses_previous_run_until_explicit_resume(self):
@@ -645,6 +652,45 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(result['completedJobs'],1)
         self.assertEqual(result['netMinutesSaved'],-15)
         self.assertEqual(result['activeJobMinutes'],0)
+
+
+    def test_relief_crews_cover_patients_across_next_day_at_start(self):
+        from backend.transport_runtime import plan_initial_schedule
+        with patch('backend.services.transport_coverage.SIMULATED_RELIEF_CREWS',True):
+            with self.sessions.begin() as db:
+                store=Store(db)
+                for i,t in enumerate(store.source()[1]):
+                    store.update_source(requests,'request_id',t['request_id'],pickup_time=NOW+timedelta(hours=24+i*2))
+                units_before=store.source()[0]
+                minute=store.clock()['minute']
+                self.assertTrue(plan_initial_schedule(db))
+                s=snapshot(db)
+                self.assertTrue(all(t.get('plannedVehicleId') for t in s['trips']))
+                self.assertEqual(s['planningCoverage']['unassigned'],0)
+                self.assertTrue(s['planningCoverage']['simulatedReliefCrews'])
+                self.assertEqual(store.source()[0],units_before)
+                self.assertEqual(s['minute'],minute)
+                self.assertFalse(s['integration']['running'])
+
+    def test_relief_does_not_make_unstaffed_vehicles_eligible(self):
+        with patch('backend.services.transport_coverage.SIMULATED_RELIEF_CREWS',True):
+            with self.sessions.begin() as db:
+                store=Store(db)
+                for v in store.source()[0]: store.update_source(ambulances,'ambulance_id',v['ambulance_id'],crew_count=0)
+                command(db,{'type':'optimize'})
+                s=snapshot(db)
+                self.assertEqual(s['planningCoverage']['unassigned'],3)
+                self.assertTrue(all(t.get('coverageNote') for t in s['trips']))
+
+    def test_initial_route_failure_preserves_paused_state_and_source(self):
+        from backend.transport_runtime import plan_initial_schedule
+        with self.sessions.begin() as db:
+            before=Store(db).source()
+            with patch('backend.services.transport_planner.get_time_matrix',side_effect=RoutingError('offline')):
+                self.assertFalse(plan_initial_schedule(db))
+            self.assertFalse(Store(db).clock()['running'])
+            self.assertEqual(Store(db).source(),before)
+            self.assertTrue(any('Initial planning unavailable' in e for e in snapshot(db)['events']))
 
 
 if __name__=='__main__': unittest.main()

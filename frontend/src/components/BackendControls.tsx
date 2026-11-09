@@ -21,6 +21,7 @@ export default function BackendControls({ snapshot: s, busy, onAction }: {
       <summary><span>Backend simulation and planning</span></summary>
 
       <div className="feature-body">
+        {s.planningCoverage && <p>{s.planningCoverage.simulatedReliefCrews ? 'Simulated relief crews cover shift changes.' : 'Recorded shift limits apply.'} {s.planningCoverage.planned} future trips assigned; {s.planningCoverage.unassigned} awaiting feasible coverage.</p>}
 
         <p>{!server?.schemaReady ? 'Server controls are unavailable until transport storage is initialized.'
 

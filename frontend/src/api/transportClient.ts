@@ -90,6 +90,7 @@ export function validateSnapshot(data: any): Snapshot {
     )
       throw new Error('Invalid trip in backend response.');
     tripIds.add(t.id);
+    if (t.coverageNote !== undefined && typeof t.coverageNote !== 'string') throw new Error('Invalid coverage note.');
     if ((t.plannedVehicleId !== undefined && !ids.has(t.plannedVehicleId)) ||
         (t.plannedSequence !== undefined && !count(t.plannedSequence)) ||
         (t.vehicleId !== undefined && !ids.has(t.vehicleId)) ||
@@ -106,6 +107,10 @@ export function validateSnapshot(data: any): Snapshot {
     if (t.vehicleId !== undefined && !['complete','cancelled'].includes(t.status) && !data.vehicles.some((v: any) => v.id === t.vehicleId && v.tripId === t.id))
       throw new Error('Inconsistent trip assignment.');
   }
+  if (data.planningCoverage !== undefined && (!object(data.planningCoverage) ||
+      typeof data.planningCoverage.simulatedReliefCrews !== 'boolean' ||
+      !count(data.planningCoverage.planned) || !count(data.planningCoverage.unassigned)))
+    throw new Error('Invalid planning coverage.');
   if (data.timeSavings !== undefined) {
     const m = data.timeSavings;
     if (!object(m) || !count(m.completedJobs) || !count(m.activeJobs) ||

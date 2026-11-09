@@ -8,6 +8,7 @@ from backend.services.transport_snapshot import ACTIVE
 from backend.transport_store import Store, TransportError, utc, ambulances, requests
 
 from backend.services import transport_timing as timing
+from backend.services.transport_coverage import shift_limit
 
 
 def eligible(v,t):
@@ -61,7 +62,7 @@ def assign(store,clock,trip_id,vehicle_id):
     reserved=[p for p in store.all_plans().values() if p['vehicle_id']==vehicle_id and p['body'].get('stage')=='queued']
     if reserved and t['status']!='transfer':
         raise TransportError('Ambulance has a reserved schedule; reoptimize or choose another unit.')
-    if (utc(v['shift_end_at'])-utc(clock['reference_at'])).total_seconds()/60<=clock['minute']:
+    if shift_limit(v,clock['reference_at'])<=clock['minute']:
         raise TransportError('Ambulance shift has ended.')
     prior=store.all_plans().get(trip_id,{}).get('body',{})
     target=dict(t)
@@ -75,7 +76,7 @@ def assign(store,clock,trip_id,vehicle_id):
     if t['status']=='transfer':
         body['transferLocation']=location
         if 'actualPickup' in prior: body['actualPickup']=prior['actualPickup']
-    shift_end=(utc(v['shift_end_at'])-utc(clock['reference_at'])).total_seconds()/60
+    shift_end=shift_limit(v,clock['reference_at'])
     if body['predictedAvailable']>shift_end: raise TransportError('Transport would finish after the ambulance shift ends.')
     # Explicit patient recovery can displace only future, not-yet-active work.
     for reservation in reserved:
@@ -112,7 +113,7 @@ def recover_transfers(store,clock):
         for unit in units:
             vid=unit['ambulance_id']
             if vid in busy or not eligible(unit,trip) or holds.get(vid,{}).get('hold_until',0)>clock['minute']: continue
-            shift_end=(utc(unit['shift_end_at'])-utc(clock['reference_at'])).total_seconds()/60
+            shift_end=shift_limit(unit,clock['reference_at'])
             if shift_end<=clock['minute']: continue
             try:
                 plan=route_plan(unit,target,clock['minute'],clock['reference_at'],factor=2 if clock['traffic'] else 1)
@@ -141,7 +142,9 @@ def optimize(store,clock,*,recover=True):
     pending=[t for t in trips if t['status']=='scheduled']
     if not pending: return
     usable=[v for v in units if v['status']!='out_of_service']
-    if not usable: raise TransportError('No available ambulances.')
+    if not usable:
+        store.event(clock['minute'],f'{len(pending)} scheduled transports need coverage: no operational ambulances.')
+        return
     locations=[(v['current_lat'],v['current_lng']) for v in usable]
     locations+= [(t['pickup_lat'],t['pickup_lng']) for t in trips]
     locations+= [(t['dropoff_lat'],t['dropoff_lng']) for t in trips]
@@ -162,7 +165,7 @@ def optimize(store,clock,*,recover=True):
 
     def evaluate(v,sequence):
         start,available=base[v['ambulance_id']]
-        shift_end=(utc(v['shift_end_at'])-utc(clock['reference_at'])).total_seconds()/60
+        shift_end=shift_limit(v,clock['reference_at'])
         lateness=0
         driving=0
         result=[]
@@ -221,6 +224,8 @@ def optimize(store,clock,*,recover=True):
             store.event(clock['minute'],f'{t["request_id"]} '+(f'scheduled on {new} by greedy road-time planning.' if new else 'requires a new feasible ambulance assignment.'),'assignment',t['request_id'],old,new)
     for _,row in prepared:
         store.save_plan(row)
+    unassigned=len(pending)-len(selected)
+    store.event(clock['minute'],f'Planning coverage: {len(selected)} of {len(pending)} scheduled transports assigned; {unassigned} require additional feasible coverage.')
     store.event(clock['minute'],'Fleet schedule recalculated: pickup punctuality first, then balanced active/queued call counts and OSRM driving time; heuristic results, not guaranteed optimal.')
 
 

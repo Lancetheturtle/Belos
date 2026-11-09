@@ -28,10 +28,9 @@ def command(db,payload):
         # Reset restores active trips too; prepare their roads without moving them.
         try:
             with db.begin_nested():
-                units,trips=store.source()
-                prepare_active(store,clock,units,trips)
+                optimize(store,clock)
         except (RoutingError,TransportError):
-            store.event(clock['minute'],'Reset completed and simulation paused. Road routes could not be prepared; retry Prepare active road routes.')
+            store.event(clock['minute'],'Reset completed and simulation paused. Road routes could not be prepared; retry Replan fleet schedule.')
     elif kind=='assign':
         assign(store,clock,payload['tripId'],payload['vehicleId'])
     elif kind=='optimize':
@@ -41,6 +40,8 @@ def command(db,payload):
         prepare_active(store,clock,units,trips)
         store.event(clock['minute'],'Active road routes prepared from OSRM.')
     elif kind=='simulation':
+        if payload['running'] and not clock['running']:
+            optimize(store,clock)
         # Starting only changes the worker flag. HTTP reads never advance time.
         clock['running']=payload['running']
         clock['speed']=payload.get('speed',clock['speed'])
