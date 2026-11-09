@@ -72,6 +72,7 @@ export default function TransportSchedule({
                     </span>
                   )}
                 </div>
+                {t.coverageNote && <p className="transfer-note">{t.coverageNote}</p>}
                 <div className="trip-bottom">
                   {t.plannedVehicleId ? (
                     <span>Scheduled on {t.plannedVehicleId} · Queue {t.plannedSequence} · Pickup ETA {arrival === null ? '—' : clock(arrival)}</span>

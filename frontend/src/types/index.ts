@@ -26,6 +26,7 @@ export type Trip = {
   status: 'waiting' | 'pickup' | 'onboard' | 'transfer' | 'complete' | 'cancelled';
   plannedVehicleId?: string;
   plannedSequence?: number;
+  coverageNote?: string;
   vehicleId?: string;
   actualPickup?: number;
   completedAt?: number;
@@ -80,6 +81,7 @@ export type TimeSavings = {
   serviceMinutes: { loading: number; handoff: number; reset: number };
 };
 export type Snapshot = {
+  planningCoverage?: { simulatedReliefCrews: boolean; planned: number; unassigned: number };
   timeSavings?: TimeSavings;
   integration?: {
     source: string;

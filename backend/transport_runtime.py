@@ -10,6 +10,9 @@ import time
 from backend.database import engine, SessionLocal
 from backend.transport_store import Store, storage_metadata, utc
 from backend.services.transport_commands import initialize
+from backend.services.transport_planner import optimize
+from backend.services.osrm import RoutingError
+from backend.transport_store import TransportError
 from backend.services.transport_motion import advance
 
 log=logging.getLogger(__name__)
@@ -25,6 +28,17 @@ def tick(db,now=None):
     clock['wall_at']=now
     clock['worker_at']=now
     store.save_clock(clock)
+
+
+def plan_initial_schedule(db):
+    store=Store(db)
+    clock=store.clock(lock=True)
+    try:
+        with db.begin_nested(): optimize(store,clock)
+    except (RoutingError,TransportError):
+        store.event(clock['minute'],'Initial planning unavailable; simulation stays paused. Replan fleet schedule before starting.')
+        return False
+    return True
 
 
 def main():
@@ -54,6 +68,7 @@ def main():
         clock=store.clock(lock=True)
         clock.update(running=False,speed=args.speed,wall_at=datetime.now(timezone.utc))
         store.save_clock(clock)
+        plan_initial_schedule(db)
     print('Backend worker ready; simulation paused. Click Start backend simulation in the dashboard to begin. Ctrl+C stops the worker.')
     try:
         while True:

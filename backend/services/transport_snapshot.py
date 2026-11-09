@@ -105,6 +105,8 @@ def snapshot(db):
                 result[field]=plan[field]
         if plan.get('transport'):
             result['transportRoute']=plan['transport']['path']
+        if result['status'] in ('waiting','transfer') and not result.get('vehicleId') and not result.get('plannedVehicleId'):
+            result['coverageNote']='Awaiting a feasible vehicle/route assignment. Replan fleet schedule retries coverage.'
         if result['status'] not in ('complete','cancelled') and t['ambulance_id'] and active.get(t['ambulance_id']) != t['request_id'] and plan.get('stage')!='queued':
             raise TransportError('Inconsistent active transport assignment.',422)
         trips.append(result)
@@ -128,7 +130,10 @@ def snapshot(db):
     from backend.services.transport_reset import baseline
     reset_actions = ['reset'] if ready and baseline(db) is not None else []
     from backend.services.transport_timing import metrics
-    return {'timeSavings':metrics(plan_rows,clock['minute']), 'minute':clock['minute'],'traffic':clock['traffic'],'vehicles':vehicles,'trips':trips,
+    from backend.services.transport_coverage import SIMULATED_RELIEF_CREWS
+    return {'planningCoverage':{'simulatedReliefCrews':SIMULATED_RELIEF_CREWS,
+        'unassigned':sum(t['status'] in ('waiting','transfer') and not t.get('vehicleId') and not t.get('plannedVehicleId') for t in trips),
+        'planned':sum(bool(t.get('plannedVehicleId')) for t in trips)}, 'timeSavings':metrics(plan_rows,clock['minute']), 'minute':clock['minute'],'traffic':clock['traffic'],'vehicles':vehicles,'trips':trips,
         'events':[h['reason'] for h in history[-100:]][::-1], 'assignmentHistory':assignment_history,
         'directory':{'ambulances':directory_units,'transport_requests':directory_requests},
         'supportedActions':['assign','optimize','routes','outage','restore','delay','traffic','simulation'] + reset_actions if ready else [],
