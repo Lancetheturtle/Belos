@@ -39,7 +39,7 @@ def startup_event():
         Base.metadata.create_all(bind=engine)
         print("Successfully connected and initialized tables!")
     except Exception as e:
-        print(f"CRITICAL: Could not connect to database: {e}")
+        print(f"CRITICAL: Could not connect to database ({type(e).__name__}).")
 
 
 @app.post("/transport/reset")
@@ -54,7 +54,7 @@ def transport_action(payload: ActionPayload, db: Session = Depends(get_db)):
             advance_shift(db, payload.minutes)
         return get_current_snapshot(db)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Transport operation failed; check server logs.")
 
 
 @app.get("/health")
@@ -73,7 +73,7 @@ def test_db_connection(db: Session = Depends(get_db)):
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Database connection failed: {str(e)}"
+            status_code=500, detail="Database connection failed. Check the server DATABASE_URL configuration."
         )
 
 

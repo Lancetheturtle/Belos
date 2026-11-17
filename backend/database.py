@@ -1,11 +1,14 @@
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+psycopg://tsdbadmin:p4d86pi5ijnurb04@axlri9m9b8.obi5rjrxue.tsdb.cloud.timescale.com:33323/tsdb",
-)
+# Deployment environment variables take priority over the ignored local file.
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False, interpolate=False)
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is required. Set it in the server environment or the local root .env file.")
 
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)

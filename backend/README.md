@@ -10,7 +10,7 @@ Install runtime dependencies:
 python -m pip install -r requirements.txt
 ```
 
-Export your existing Tiger Data PostgreSQL URL as `DATABASE_URL` in each terminal that runs Python. Keep the secret local and out of the frontend. `OSRM_URL` optionally selects your routing server; otherwise the existing public OSRM development server is used. Python reads exported environment variables; a root `.env.local` is not automatically loaded.
+Export your existing Tiger Data PostgreSQL URL as `DATABASE_URL` in each terminal that runs Python. Keep the secret local and out of the frontend. `OSRM_URL` optionally selects your routing server; otherwise the existing public OSRM development server is used. Python reads exported environment variables and the Git-ignored root `.env` file. Exported values take priority.
 
 Initialize once (idempotent; no existing table is dropped, reset or seeded):
 
@@ -153,3 +153,10 @@ After deploying, restart the worker and use Reset simulation then Replan fleet s
 The user enabled simulated relief crews: healthy ambulances with valid crew counts, service level and capacity can be reused after the recorded crew's shift ends. This is an explicit simulation assumption, not evidence that real relief staff have been booked. Original Tiger Data shift records are preserved. `transport_coverage.py` centralizes this policy; setting `SIMULATED_RELIEF_CREWS=False` restores strict recorded shift limits.
 
 The worker automatically plans all scheduled requests during startup while paused. Reset rebuilds the entire fleet schedule, and switching simulation from paused to running refreshes planning before movement. Existing active patient assignments remain protected. The snapshot's `planningCoverage` counts future assignments and unresolved requests; unresolved trips have a coverage note. Routing failures keep startup/reset paused with a visible retry event; no fake route or vehicle is created. This supersedes the previous manual-only startup planning and strict shift-cutoff behavior described above.
+
+
+## Credentials
+
+There is no embedded database-password fallback. For local use, copy `.env.example` to `.env` and set DATABASE_URL; never commit the real `.env`. The API and worker load the same file, and deployed environment variables take precedence. Install requirements after updating, including python-dotenv. The frontend must never receive DATABASE_URL or a VITE_-prefixed database secret. OSRM and OpenStreetMap URLs are public endpoints and require no secret keys in this project.
+
+The previous database credential was present in public Git history. Removing it from the working tree does not revoke it: rotate it in Tiger Data, update the local `.env` and each hosted API/worker environment, then redeploy/restart. No database credential was rotated automatically. API health errors omit raw database exception text.
